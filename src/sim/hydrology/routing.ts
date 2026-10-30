@@ -60,6 +60,8 @@ export class Hydrology {
   readonly riverLength: Float64Array;
   /** Hop distance to the ocean. */
   readonly oceanDistance: Int32Array;
+  /** Potential evaporation from open water, mm per year; null means the latitude proxy. The climate stage sets it. */
+  evaporation: Float64Array | null = null;
   lakes: LakeInfo[] = [];
 
   /** Cells in upstream-first order (every cell before its downstream). */
@@ -103,6 +105,12 @@ export class Hydrology {
   applyProxyPrecipitation(elevation: Float64Array, seaLevel: number): void {
     oceanDistance(this.grid, elevation, seaLevel, this.oceanDistance, this.queue);
     proxyPrecipitation(this.grid, this.oceanDistance, this.precipitation);
+    this.evaporation = null;
+  }
+
+  /** Potential evaporation of a cell, mm per year: the climate's field when set, else the latitude proxy. */
+  private evaporationAt(i: number): number {
+    return this.evaporation ? this.evaporation[i] : potentialEvaporation(this.grid.lat[i]);
   }
 
   /** Route the water of `precipitation` over the relief: fills every output array. */
@@ -233,7 +241,7 @@ export class Hydrology {
         areaSum += area[i];
         const depth = surface - elevation[i];
         if (depth > maxDepth) maxDepth = depth;
-        evapSum += potentialEvaporation(grid.lat[i]) * 1e-6 * area[i];
+        evapSum += this.evaporationAt(i) * 1e-6 * area[i];
         for (let t = grid.nbStart[i]; t < grid.nbStart[i + 1]; t++) {
           const nb = grid.nb[t];
           if (dep[nb] < 0 && level[nb] === surface && level[nb] > elevation[nb]) {
@@ -327,7 +335,6 @@ export class Hydrology {
 
   /** Water body of an endorheic lake: the lowest cells whose evaporation balances the inflow. */
   private shrinkLake(l: LakeInfo, elevation: Float64Array): void {
-    const grid = this.grid;
     const lake = this.lake;
     const level = this.waterLevel;
     const area = this.areaKm2;
@@ -342,7 +349,7 @@ export class Hydrology {
     let surface = spill;
     for (let k = 0; k < cells.length; k++) {
       const i = cells[k];
-      const e = potentialEvaporation(grid.lat[i]) * 1e-6 * area[i];
+      const e = this.evaporationAt(i) * 1e-6 * area[i];
       if (cum + e >= l.inflowKm3) {
         const next = k + 1 < cells.length ? elevation[cells[k + 1]] : spill;
         const fraction = e > 0 ? (l.inflowKm3 - cum) / e : 1;

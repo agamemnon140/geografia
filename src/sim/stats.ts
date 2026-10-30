@@ -1,5 +1,6 @@
 import type { CirculationInfo } from './climate/circulation.ts';
 import { SAMPLES } from './climate/insolation.ts';
+import type { BasinInfo } from './climate/ocean.ts';
 import { DEG } from './grid/geometry.ts';
 import type { LakeInfo } from './hydrology/routing.ts';
 
@@ -46,6 +47,19 @@ export interface WorldStats {
   oceanSeasonalRange: number;
   circulationCells: number;
   hadleyEdgeDeg: number;
+  /** Area-weighted precipitation over the whole surface, mm per year. */
+  meanPrecipitation: number;
+  /** Area-weighted evaporation over the whole surface, mm per year; equals precipitation at steady state. */
+  meanEvaporation: number;
+  /** Land with less than 250 mm per year, as a fraction of the land area. */
+  desertFraction: number;
+  wettestMm: number;
+  oceanBasins: number;
+  /** Fastest surface current, m/s. */
+  strongestCurrent: number;
+  /** Largest warm and cold anomalies carried by currents, degrees C. */
+  warmestCurrentAnomaly: number;
+  coldestCurrentAnomaly: number;
 }
 
 export interface ClimateFields {
@@ -53,7 +67,15 @@ export interface ClimateFields {
   temperatureAnnual: Float64Array;
   temperature: Float64Array;
   circulation: CirculationInfo;
+  evaporation: Float64Array;
+  basins: BasinInfo[];
+  currentU: Float64Array;
+  currentV: Float64Array;
+  sstAnomaly: Float64Array;
 }
+
+/** Land drier than this is desert for the statistics, mm per year. */
+export const DESERT_MM = 250;
 
 export interface ReliefFields {
   elevation: Float64Array;
@@ -86,6 +108,13 @@ export function computeStats(relief: ReliefFields, hydro: HydrologyFields, clima
   let landRangeArea = 0;
   let oceanRangeSum = 0;
   let oceanRangeArea = 0;
+  let precipAll = 0;
+  let evapAll = 0;
+  let desert = 0;
+  let wettest = 0;
+  let strongest = 0;
+  let warmest = 0;
+  let coldest = 0;
   let ocean = 0;
   let continental = 0;
   let min = Infinity;
@@ -105,12 +134,21 @@ export function computeStats(relief: ReliefFields, hydro: HydrologyFields, clima
     total += a;
     if (e < min) min = e;
     if (e > max) max = e;
+    const p = hydro.precipitation[i];
+    precipAll += a * p;
+    evapAll += a * climate.evaporation[i];
+    if (p > wettest) wettest = p;
+    const speed = Math.hypot(climate.currentU[i], climate.currentV[i]);
+    if (speed > strongest) strongest = speed;
+    if (climate.sstAnomaly[i] > warmest) warmest = climate.sstAnomaly[i];
+    if (climate.sstAnomaly[i] < coldest) coldest = climate.sstAnomaly[i];
     if (e < 0) {
       ocean += a;
       oceanSum += a * -e;
     } else {
       landSum += a * e;
-      precipSum += a * hydro.precipitation[i];
+      precipSum += a * p;
+      if (p < DESERT_MM) desert += a;
       if (hydro.lake[i] >= 0) lakeArea += a;
       const m = hydro.mouth[i];
       const lakeAtMouth = hydro.lake[m];
@@ -178,5 +216,13 @@ export function computeStats(relief: ReliefFields, hydro: HydrologyFields, clima
     oceanSeasonalRange: oceanRangeArea > 0 ? oceanRangeSum / oceanRangeArea : 0,
     circulationCells: climate.circulation.cells,
     hadleyEdgeDeg: climate.circulation.hadleyEdgeDeg,
+    meanPrecipitation: precipAll / total,
+    meanEvaporation: evapAll / total,
+    desertFraction: land > 0 ? desert / land : 0,
+    wettestMm: wettest,
+    oceanBasins: climate.basins.length,
+    strongestCurrent: strongest,
+    warmestCurrentAnomaly: warmest,
+    coldestCurrentAnomaly: coldest,
   };
 }

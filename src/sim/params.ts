@@ -38,7 +38,7 @@ export interface ParamSpec {
 }
 
 /** Milestone currently implemented; parameters wired in later milestones are shown disabled. */
-export const CURRENT_MILESTONE = 4;
+export const CURRENT_MILESTONE = 5;
 
 export const PARAM_SPECS: ParamSpec[] = [
   { key: 'seed', label: 'Seed', min: 0, max: 4294967295, step: 1, unit: '', wiredIn: 1, help: 'All randomness' },

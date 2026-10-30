@@ -1,4 +1,4 @@
-import { LAYERS, layerById, temperatureAt, windAt } from '../render/layers.ts';
+import { LAYERS, layerById, precipitationAt, temperatureAt, windAt } from '../render/layers.ts';
 import { MapView } from '../render/map.ts';
 import { ANNUAL, SAMPLES } from '../sim/climate/insolation.ts';
 import { Grid, cellAreasKm2 } from '../sim/grid/grid.ts';
@@ -121,6 +121,12 @@ export function mountApp(root: HTMLElement): void {
       ['Seasonal range 40–60°', `land ${s.landSeasonalRange.toFixed(0)}, ocean ${s.oceanSeasonalRange.toFixed(0)} °C`],
       ['Circulation cells', `${s.circulationCells} per hemisphere`],
       ['Hadley cell edge', `${s.hadleyEdgeDeg.toFixed(0)}°`],
+      ['Precipitation', `${s.meanPrecipitation.toFixed(0)} mm/yr (evaporation ${s.meanEvaporation.toFixed(0)})`],
+      ['Desert', `${(s.desertFraction * 100).toFixed(1)} % of land`],
+      ['Wettest cell', `${s.wettestMm.toFixed(0)} mm/yr`],
+      ['Ocean basins', `${s.oceanBasins}`],
+      ['Strongest current', `${s.strongestCurrent.toFixed(2)} m/s`],
+      ['Current anomalies', `${s.warmestCurrentAnomaly.toFixed(1)} / ${s.coldestCurrentAnomaly.toFixed(1)} °C`],
     ];
     statsTable.innerHTML = rows.map(([k, v]) => `<tr><td>${k}</td><td>${v}</td></tr>`).join('');
   };
@@ -138,6 +144,18 @@ export function mountApp(root: HTMLElement): void {
     }
     const [u, v] = windAt(world, cell, sample);
     const bearing = ((Math.atan2(u, v) * RAD) + 360) % 360;
+    let driest = Infinity;
+    let wettest = -Infinity;
+    for (let s = 0; s < SAMPLES; s++) {
+      const p = precipitationAt(world, cell, s);
+      if (p < driest) driest = p;
+      if (p > wettest) wettest = p;
+    }
+    const cu = world.currentU[cell];
+    const cv = world.currentV[cell];
+    const currentLine = world.basin[cell] >= 0
+      ? `current     ${Math.hypot(cu, cv).toFixed(2)} m/s toward ${(((Math.atan2(cu, cv) * RAD) + 360) % 360).toFixed(0)}°, basin #${world.basin[cell]}, carries ${world.sstAnomaly[cell] >= 0 ? '+' : ''}${world.sstAnomaly[cell].toFixed(1)} °C`
+      : `sea effect  ${world.sstAnomaly[cell] >= 0 ? '+' : ''}${world.sstAnomaly[cell].toFixed(1)} °C from nearby currents`;
     const area = cellAreasKm2(grid, world.radiusKm)[cell];
     const rel = world.elevation[cell] - world.seaLevel;
     const orogeny = world.orogenyStep[cell];
@@ -164,7 +182,8 @@ export function mountApp(root: HTMLElement): void {
       `sediment    ${world.sediment[cell].toFixed(2)} km`,
       `orogeny     ${orogeny >= 0 ? `step ${orogeny} (${world.steps - orogeny} steps ago)` : 'none'}`,
       `eroded      ${world.eroded[cell].toFixed(0)} m of surface`,
-      `precip      ${world.precipitation[cell].toFixed(0)} mm/yr`,
+      `precip      ${world.precipitation[cell].toFixed(0)} mm/yr annual, ${driest.toFixed(0)} to ${wettest.toFixed(0)} over the year`,
+      `            orographic ${world.precipitationOrographic[cell].toFixed(0)}, convergence ${world.precipitationConvergence[cell].toFixed(0)}, evaporation ${world.evaporation[cell].toFixed(0)} mm/yr`,
       `discharge   ${world.discharge[cell].toFixed(1)} km³/yr`,
       `river path  ${world.riverLength[cell].toFixed(0)} km from the farthest source`,
       `drains to   ${drainsTo}`,
@@ -175,6 +194,7 @@ export function mountApp(root: HTMLElement): void {
       `temperature ${world.temperatureAnnual[cell].toFixed(1)} °C annual, ${coldest.toFixed(1)} to ${warmest.toFixed(1)} °C over the year`,
       `continental ${(world.continentality[cell] * 100).toFixed(0)} %`,
       `wind        ${sampleName(sample)}: ${Math.hypot(u, v).toFixed(1)} m/s toward ${bearing.toFixed(0)}° (east ${u.toFixed(1)}, north ${v.toFixed(1)})`,
+      currentLine,
     );
     inspector.textContent = lines.join('\n');
   };

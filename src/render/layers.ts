@@ -105,7 +105,21 @@ const PRECIPITATION_RAMP: Stop[] = [
   [1000, [90, 170, 110]],
   [1500, [40, 130, 140]],
   [2200, [20, 70, 130]],
+  [3500, [40, 20, 90]],
 ];
+
+const ANOMALY_RAMP: Stop[] = [
+  [-8, [20, 40, 160]],
+  [-3, [90, 150, 220]],
+  [0, [235, 235, 235]],
+  [3, [240, 140, 90]],
+  [8, [170, 20, 30]],
+];
+
+/** Precipitation of a cell for a sample index or ANNUAL, mm per year. */
+export function precipitationAt(world: World, cell: number, sample: number): number {
+  return sample >= ANNUAL ? world.precipitation[cell] : world.precipitationSamples[sample * world.n + cell];
+}
 
 const LAKE_COLOR: RGB = [40, 120, 210];
 const RIVER_COLOR: RGB = [20, 70, 190];
@@ -160,11 +174,33 @@ export const LAYERS: Layer[] = [
   },
   {
     id: 'precipitation',
-    name: 'Precipitation (proxy)',
-    cellColor: (world, i) => {
-      const c = ramp(PRECIPITATION_RAMP, world.precipitation[i]);
+    name: 'Precipitation',
+    seasonal: true,
+    cellColor: (world, i, sample) => {
+      const c = ramp(PRECIPITATION_RAMP, precipitationAt(world, i, sample));
       if (world.elevation[i] >= world.seaLevel) return c;
       return [c[0] * 0.55, c[1] * 0.55, c[2] * 0.6];
+    },
+  },
+  {
+    id: 'currents',
+    name: 'Ocean currents (hue = direction)',
+    cellColor: (world, i) => {
+      if (world.basin[i] < 0) return [70, 70, 70];
+      const u = world.currentU[i];
+      const v = world.currentV[i];
+      const speed = Math.hypot(u, v);
+      const hue = ((Math.atan2(v, u) + 2 * Math.PI) % (2 * Math.PI)) / (2 * Math.PI);
+      return hsvColor(hue, 0.85, Math.min(1, 0.2 + speed / 0.6));
+    },
+  },
+  {
+    id: 'sstAnomaly',
+    name: 'Current heat transport',
+    cellColor: (world, i) => {
+      const c = ramp(ANOMALY_RAMP, world.sstAnomaly[i]);
+      if (world.basin[i] >= 0) return c;
+      return [c[0] * 0.6, c[1] * 0.6, c[2] * 0.6];
     },
   },
   {
