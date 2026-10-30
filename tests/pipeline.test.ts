@@ -75,11 +75,14 @@ describe('build', () => {
   it('pins the ocean cover when asked, the water volume following', () => {
     const half = build({ ...QUICK, oceanFraction: 0.5 });
     const wide = build({ ...QUICK, oceanFraction: 0.85 });
-    // Ice sheets take some water back from the pinned sea at the end (a few percent of the surface).
-    expect(Math.abs(half.stats.oceanFraction - 0.5)).toBeLessThan(0.06);
-    expect(Math.abs(wide.stats.oceanFraction - 0.85)).toBeLessThan(0.06);
+    const areas = cellAreasKm2(Grid.get(half.level), half.radiusKm);
+    // The loop holds the pinned cover exactly; ice sheets then take some water back (a few
+    // percent of the surface, more on a land-heavy planet with large ice sheets).
+    expect(oceanFraction(half.elevation, areas, half.loopSeaLevel)).toBeCloseTo(0.5, 2);
+    expect(oceanFraction(wide.elevation, areas, wide.loopSeaLevel)).toBeCloseTo(0.85, 2);
+    expect(Math.abs(half.stats.oceanFraction - 0.5)).toBeLessThan(0.1);
+    expect(Math.abs(wide.stats.oceanFraction - 0.85)).toBeLessThan(0.1);
     expect(wide.seaLevel).toBeGreaterThan(half.seaLevel);
-    // A land-heavy planet grows big ice sheets; what they lock lowers its sea by a few hundred meters at most.
     expect(Math.abs(half.loopSeaLevel - half.seaLevel)).toBeLessThan(500);
   });
 

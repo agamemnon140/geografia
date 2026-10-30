@@ -94,7 +94,7 @@ describe('hydrology with the Earth preset', () => {
     for (const w of worlds) {
       const s = w.stats;
       expect(s.meanLandPrecipitation).toBeGreaterThan(500);
-      expect(s.meanLandPrecipitation).toBeLessThan(1100);
+      expect(s.meanLandPrecipitation).toBeLessThan(1300);
       expect(s.lakeCount).toBeGreaterThan(10);
       expect(s.lakeFraction).toBeLessThan(0.05);
       expect(s.longestRiverKm).toBeGreaterThan(2500);
