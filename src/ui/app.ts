@@ -9,13 +9,18 @@ import { explainCell, sampleName } from './explain.ts';
 import { paramsFromHash, paramsToHash } from './url.ts';
 
 /** Full builds kept for the gallery (each holds a few tens of megabytes of fields). */
-const GALLERY_SIZE = 8;
+const GALLERY_SIZE = 6;
 /** Delay after the last parameter edit before the automatic preview starts. */
 const PREVIEW_DEBOUNCE_MS = 500;
+/** Timeline keyframes requested per full build; fewer on the largest grids to bound memory. */
+const KEYFRAMES = 8;
+const KEYFRAMES_LARGE_GRID = 4;
 
+/** A full build: its final world and, for the most recent one, the timeline keyframes (oldest first). */
 interface GalleryEntry {
   world: World;
-  canvas: HTMLCanvasElement;
+  keyframes: World[];
+  element: HTMLElement;
 }
 
 function template(): string {
@@ -40,7 +45,7 @@ function template(): string {
         <h2>Parameters</h2>
         <div class="params">${paramRows}</div>
         <div class="row">
-          <button id="build" class="primary" title="Full resolution; the result joins the gallery">Build planet</button>
+          <button id="build" class="primary" title="Full resolution with its history; the result joins the gallery">Build planet</button>
           <button id="variation" title="Keep the parameters, draw a new seed">New variation</button>
         </div>
         <div class="row">
@@ -66,6 +71,11 @@ function template(): string {
       </aside>
       <main class="center">
         <div class="map"><canvas id="map"></canvas></div>
+        <div id="timelineRow" class="timeline hidden">
+          <span>History</span>
+          <input type="range" id="timeline" min="0" max="0" step="1" value="0" />
+          <span id="timelineLabel" class="label"></span>
+        </div>
         <div id="gallery" class="gallery"></div>
       </main>
     </div>`;
@@ -93,6 +103,9 @@ export function mountApp(root: HTMLElement): void {
   const copyLinkButton = q<HTMLButtonElement>('#copyLink');
   const statsTable = q<HTMLTableElement>('#stats');
   const inspector = q<HTMLDivElement>('#inspector');
+  const timelineRow = q<HTMLDivElement>('#timelineRow');
+  const timeline = q<HTMLInputElement>('#timeline');
+  const timelineLabel = q<HTMLSpanElement>('#timelineLabel');
   const gallery = q<HTMLDivElement>('#gallery');
   const inputs = new Map<keyof PlanetParams, HTMLInputElement>();
   for (const input of root.querySelectorAll<HTMLInputElement>('input[data-key]')) {
@@ -101,7 +114,10 @@ export function mountApp(root: HTMLElement): void {
 
   const map = new MapView(q<HTMLCanvasElement>('#map'));
   const client = new SimClient();
+  /** The world on screen (a final world, a preview, or a keyframe). */
   let world: World | null = null;
+  /** The gallery entry whose timeline is on the slider. */
+  let current: GalleryEntry | null = null;
   let building = false;
   let queued: 'preview' | 'full' | null = null;
   let selectedCell = -1;
@@ -124,7 +140,7 @@ export function mountApp(root: HTMLElement): void {
     const k = s.koppen;
     const rows: [string, string][] = [
       ['Grid level', `${w.level} (${w.n.toLocaleString()} cells)${w.preview ? ', preview' : ''}`],
-      ['Tectonic steps', `${w.steps}`],
+      ['Tectonic step', `${w.steps} of ${w.params.tectonicAge}`],
       ['Active plates', `${s.activePlates} of ${w.plates.length}`],
       ['Ocean / land', `${pct(s.oceanFraction)} / ${pct(s.landFraction)}`],
       ['Continents', `${s.continents} (largest ${(s.largestLandmassKm2 / 1e6).toFixed(1)} million km²), ${s.islands} islands`],
@@ -160,13 +176,38 @@ export function mountApp(root: HTMLElement): void {
 
   const showWorld = (w: World): void => {
     world = w;
-    selectedCell = -1;
     map.setWorld(w);
     renderStats(w);
-    inspector.textContent = 'Click the map to see why a cell is what it is.';
+    if (selectedCell >= 0 && selectedCell < w.n) renderInspector(selectedCell);
+    else {
+      selectedCell = -1;
+      inspector.textContent = 'Click the map to see why a cell is what it is.';
+    }
   };
 
-  const addToGallery = (w: World): void => {
+  /** Timeline positions: the keyframes that have arrived, then the final world last. */
+  const renderTimeline = (): void => {
+    if (!current || current.keyframes.length === 0) {
+      timelineRow.classList.add('hidden');
+      return;
+    }
+    const total = current.keyframes.length;
+    timelineRow.classList.remove('hidden');
+    timeline.max = String(total);
+    const position = Number(timeline.value);
+    const shown = position >= total ? current.world : current.keyframes[position];
+    timelineLabel.textContent = `step ${shown.steps} of ${shown.params.tectonicAge} (about ${shown.steps} million years)`;
+  };
+
+  const showTimelinePosition = (): void => {
+    if (!current) return;
+    const total = current.keyframes.length;
+    const position = Number(timeline.value);
+    showWorld(position >= total ? current.world : current.keyframes[position]);
+    renderTimeline();
+  };
+
+  const addToGallery = (w: World): GalleryEntry => {
     const canvas = document.createElement('canvas');
     canvas.width = 240;
     canvas.height = 120;
@@ -178,18 +219,25 @@ export function mountApp(root: HTMLElement): void {
     caption.className = 'gallery-caption';
     caption.textContent = `seed ${w.params.seed} · ocean ${(w.stats.oceanFraction * 100).toFixed(0)} % · ${w.stats.meanTemperature.toFixed(0)} °C · ${w.stats.continents} continents`;
     item.append(canvas, caption);
+    const entry: GalleryEntry = { world: w, keyframes: [], element: item };
     item.addEventListener('click', () => {
       setParams(w.params);
       location.hash = paramsToHash(w.params);
+      current = entry;
+      timeline.value = String(entry.keyframes.length);
       showWorld(w);
-      status.textContent = `restored seed ${w.params.seed} from the gallery`;
+      renderTimeline();
+      status.textContent = `restored seed ${w.params.seed} from the gallery${entry.keyframes.length ? '' : ' (history kept only for the latest build)'}`;
     });
-    entries.push({ world: w, canvas });
+    // Only the latest build keeps its history in memory.
+    for (const e of entries) e.keyframes = [];
+    entries.push(entry);
     gallery.prepend(item);
     while (entries.length > GALLERY_SIZE) {
-      entries.shift();
-      gallery.lastElementChild?.remove();
+      const dropped = entries.shift();
+      dropped?.element.remove();
     }
+    return entry;
   };
 
   const runBuild = async (mode: 'preview' | 'full'): Promise<void> => {
@@ -206,12 +254,36 @@ export function mountApp(root: HTMLElement): void {
     try {
       const params = readParams();
       if (mode === 'full') location.hash = paramsToHash(params);
-      const result = await client.build(params, (stage, fraction) => {
-        progress.value = fraction;
-        status.textContent = `${mode === 'preview' ? 'preview: ' : ''}${stage}`;
-      }, mode === 'preview' ? { coarser: 1 } : {});
+      let entry: GalleryEntry | null = null;
+      const result = await client.build(params, {
+        onProgress: (stage, fraction) => {
+          progress.value = fraction;
+          status.textContent = `${mode === 'preview' ? 'preview: ' : ''}${stage}`;
+        },
+        onKeyframe: (keyframe, index, total) => {
+          if (!entry) return;
+          entry.keyframes.push(keyframe);
+          if (current === entry) {
+            // Keep the slider on the final world while the history fills in.
+            if (Number(timeline.value) >= index) timeline.value = String(index + 1);
+            renderTimeline();
+          }
+          status.textContent = `history ${index + 1} of ${total}`;
+        },
+        onHistory: (elapsedMs) => {
+          status.textContent = `history ready in ${(elapsedMs / 1000).toFixed(1)} s; drag the slider under the map`;
+        },
+      }, mode === 'preview' ? { coarser: 1 } : { keyframes: levelIsLarge(params) ? KEYFRAMES_LARGE_GRID : KEYFRAMES });
+      if (mode === 'full') {
+        entry = addToGallery(result.world);
+        current = entry;
+        timeline.value = '0';
+      } else {
+        current = null;
+      }
+      selectedCell = -1;
       showWorld(result.world);
-      if (mode === 'full') addToGallery(result.world);
+      renderTimeline();
       status.textContent = `${mode === 'preview' ? 'preview' : 'built'} in ${(result.elapsedMs / 1000).toFixed(2)} s`;
     } catch (err) {
       status.textContent = `error: ${err instanceof Error ? err.message : String(err)}`;
@@ -226,6 +298,8 @@ export function mountApp(root: HTMLElement): void {
       }
     }
   };
+
+  const levelIsLarge = (p: PlanetParams): boolean => p.radiusKm > 1.3 * EARTH.radiusKm;
 
   const schedulePreview = (): void => {
     if (!autoPreview.checked) return;
@@ -266,15 +340,19 @@ export function mountApp(root: HTMLElement): void {
     map.setSample(sample);
     if (selectedCell >= 0) renderInspector(selectedCell);
   });
+  timeline.addEventListener('input', showTimelinePosition);
   exportPngButton.addEventListener('click', () => {
     if (!world) return;
     const w = world;
-    void map.toPng().then((blob) => download(blob, `geografia-${w.params.seed}-${layerSelect.value}.png`));
+    void map.toPng().then((blob) => download(blob, `geografia-${w.params.seed}-step${w.steps}-${layerSelect.value}.png`));
   });
   exportJsonButton.addEventListener('click', () => {
     if (!world) return;
-    const payload = { params: world.params, level: world.level, preview: world.preview, seaLevel: world.seaLevel, stats: world.stats, lakes: world.lakes.length, basins: world.basins.length };
-    download(new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' }), `geografia-${world.params.seed}.json`);
+    const payload = {
+      params: world.params, level: world.level, preview: world.preview, step: world.steps, seaLevel: world.seaLevel,
+      stats: world.stats, lakes: world.lakes.length, basins: world.basins.length,
+    };
+    download(new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' }), `geografia-${world.params.seed}-step${world.steps}.json`);
   });
   copyLinkButton.addEventListener('click', () => {
     location.hash = paramsToHash(readParams());

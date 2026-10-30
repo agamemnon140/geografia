@@ -140,6 +140,10 @@ Ocean fraction, mean temperature, ice fraction, desert fraction, forest fraction
 
 Stored alongside outputs so the inspector can show the causal chain: plateId, crustType, crustAge, nearest boundary type and distance, orogeny step, hotspot flag, elevation components (crust, orogeny, volcanic, erosion), temperature components (insolation, altitude, continentality, current), precipitation components (advected, orographic, convergence, shadow), discharge, biome code.
 
+### 3.8 Timeline (phase 2, built in M7)
+
+The tectonic loop is step-able and deterministic, so history is a matter of copying state. During a build, `keyframeSteps` picks evenly spaced steps (eight for an Earth-sized grid, four at level 7); at each one the simulation's per-cell state (elevation, sea level, plate, crust fields, boundaries, plates, hotspots) is copied into a `ReliefState`, about 3 MB at level 6. The final world is finalized and delivered first; the worker then runs `finalize` on every snapshot (hydrology, climate, ice, biomes, statistics, exactly the code path of the final world) and streams the results as keyframes compacted to Float32, roughly 17 MB each at level 6. A keyframe at step t is byte-for-byte the planet a build of tectonic age t would produce, which is the timeline's invariant test. Only the latest full build keeps its history in memory; gallery entries keep their final world.
+
 ## 4. Parameters
 
 | Parameter | Unit / range | Causal path |
@@ -212,6 +216,13 @@ Per link, with the Earth preset, across several seeds:
 - M5: ocean currents, moisture advection, precipitation, final rivers with real precipitation, tests.
 - M6: ice and glacial phase, Koppen, presets, gallery with stats, explain inspector, end-to-end determinism test.
 
+Phase 2 (section 9.1), in the same style:
+
+- M7: timeline. Tectonic snapshots captured every few steps during the build; after the final world is delivered, the worker computes the hydrology, climate and biomes of every snapshot and streams them as Float32 keyframes; a history slider under the map shows any step with every layer, statistics and explain mode.
+- M8: plate rifting and merging, so supercontinents assemble and break apart; plate count becomes an initial condition; mantle heat flux as a parameter.
+- M9: two-dimensional energy-balance model with ice-albedo feedback replacing the banded temperature link; greenhouse, atmospheric pressure and eccentricity as parameters; real precipitation inside the tectonic loop at the keyframes.
+- M10: views: 3D globe, A/B comparison of two worlds or two steps, export of the history as frames.
+
 ## 8. User interface
 
 The UI exists to expose causality, not to decorate. Every number on screen has a path back to a parameter or a process, and every layer is a field the simulator actually computed.
@@ -233,6 +244,7 @@ The UI exists to expose causality, not to decorate. Every number on screen has a
 | M4 | Temperature and wind layers with a month slider; circulation cell count in statistics |
 | M5 | Precipitation and ocean current layers; the final rivers |
 | M6 | Ice and Koppen layers, glacial phase, gallery with statistics, explain drawer with itemized components, parameters in the URL for sharing, PNG and JSON export, automatic coarse preview on parameter change |
+| M7 | History slider under the map; keyframes stream in after the final world; every layer, the statistics and the explain drawer work at any step; exports carry the step |
 
 ### 8.3 Rules
 

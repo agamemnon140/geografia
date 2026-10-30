@@ -219,13 +219,24 @@ export class TectonicsSim {
     this.computeElevation();
   }
 
-  run(steps: number, onProgress: (fraction: number) => void = () => {}): void {
+  /**
+   * Advance `steps` steps. `onStep` runs after every step with the elevation
+   * refreshed to match the parcels, so callers can snapshot the state for a
+   * timeline (DESIGN 9.1).
+   */
+  run(steps: number, onProgress: (fraction: number) => void = () => {}, onStep: (step: number) => void = () => {}): void {
     for (let s = 0; s < steps; s++) {
       this.stepOnce();
       if (s % 10 === 9 || s === steps - 1) onProgress((s + 1) / steps);
+      // The elevation of this step was computed before its erosion; refresh so the
+      // state matches the parcels.
+      this.computeElevation();
+      onStep(this.step);
     }
-    // The elevation of the last step was computed before its erosion; refresh so the
-    // output matches the parcels.
+  }
+
+  /** Recompute the elevation and sea level from the parcels (after erosion). */
+  refreshElevation(): void {
     this.computeElevation();
   }
 

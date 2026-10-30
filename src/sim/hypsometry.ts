@@ -1,3 +1,5 @@
+import type { FloatArray } from './types.ts';
+
 /**
  * Sea level from the water budget (DESIGN 3.3): the sea level is the elevation
  * at which the volume of the basins below it equals the planet's water volume.
@@ -5,7 +7,7 @@
  */
 
 /** Volume of water held below `level` by every cell, in km^3. */
-export function waterVolumeBelow(elevation: Float64Array, areaKm2: Float64Array, level: number): number {
+export function waterVolumeBelow(elevation: FloatArray, areaKm2: Float64Array, level: number): number {
   let sum = 0;
   for (let i = 0; i < elevation.length; i++) {
     const depth = level - elevation[i];
@@ -15,7 +17,7 @@ export function waterVolumeBelow(elevation: Float64Array, areaKm2: Float64Array,
 }
 
 /** Sea level in meters for a given water volume, by bisection on the monotonic volume function. */
-export function solveSeaLevel(elevation: Float64Array, areaKm2: Float64Array, volumeKm3: number): number {
+export function solveSeaLevel(elevation: FloatArray, areaKm2: Float64Array, volumeKm3: number): number {
   let lo = Infinity;
   let hi = -Infinity;
   let total = 0;
@@ -38,7 +40,7 @@ export function solveSeaLevel(elevation: Float64Array, areaKm2: Float64Array, vo
 }
 
 /** Fraction of the surface area below sea level. */
-export function oceanFraction(elevation: Float64Array, areaKm2: Float64Array, seaLevel: number): number {
+export function oceanFraction(elevation: FloatArray, areaKm2: Float64Array, seaLevel: number): number {
   let ocean = 0;
   let total = 0;
   for (let i = 0; i < elevation.length; i++) {

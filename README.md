@@ -33,6 +33,9 @@ currents, sstAnomaly, plates, crustAge, thickness, cells.
   restore it. The URL hash holds the parameters, so a link rebuilds the same
   planet. Export the current layer as PNG or the parameters and statistics
   as JSON.
+- After a full build its history streams in: drag the slider under the map
+  to watch continents drift, mountains rise and erode, and climates shift,
+  with every layer and the explain drawer available at each step.
 
 ## Layout
 
