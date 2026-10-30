@@ -270,12 +270,23 @@ The UI exists to expose causality, not to decorate. Every number on screen has a
 | M7 | History slider under the map; keyframes stream in after the final world; every layer, the statistics and the explain drawer work at any step; exports carry the step |
 | M8 | Mantle heat parameter and the Hot mantle preset; plate births and deaths listed under the statistics, counted per step on the timeline |
 | M9 | Greenhouse, air pressure and eccentricity parameters with the Greenhouse, Thin air and Eccentric orbit presets; the explain drawer's temperature line itemizes the energy balance |
+| M10 | View bar with Map, Globe and Compare; legends; history playback; Export history strip; Export PNG of the view on screen |
 
 ### 8.3 Rules
 
 - The UI never computes physics; it reads `World` arrays. Anything the inspector shows must be stored by the simulator as provenance.
 - Layers are pure functions from a cell to a color so the same painter serves the browser and the command-line PNG renderer.
 - Interaction stays responsive: builds run in the worker, progress is per stage and per tectonic step, and a level-5 preview (M6) answers parameter changes in under two seconds.
+
+### 8.4 Views (phase 2, built in M10)
+
+The screen is one planet seen three ways, chosen in a view bar above the stage:
+
+- Map: the equirectangular painter of v1.
+- Globe: an orthographic globe rendered on a 2D canvas without any library. Every pixel of the disc is unprojected to the sphere, rotated into the planet's frame and resolved with the same nearest-cell walk as the map, so the lookup is cached per view direction and a layer change only repaints. Drag turns the globe, a click picks a cell, a cosine light from the upper left gives the relief its roundness. The same painter serves both views: a layer is still one color per cell.
+- Compare: two maps side by side. A is the planet on the timeline; B is any keyframe of the same build or the final state of any gallery entry, so "this basin before and after the mountains rose" and "same parameters, other seed" are one dropdown away. The statistics table grows a second column and a click in either pane explains that pane's cell.
+
+Around the stage: a legend under the layer selector (gradient bar with ticks for ramps, swatches for categories, a sentence for direction hues); the history slider gains a play button; Export history writes every keyframe of the current layer into one PNG strip with step captions, and Export PNG writes whatever view is on screen.
 
 ## 9. Vision beyond v1
 

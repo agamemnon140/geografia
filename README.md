@@ -36,8 +36,14 @@ currents, sstAnomaly, plates, crustAge, thickness, cells.
   planet. Export the current layer as PNG or the parameters and statistics
   as JSON.
 - After a full build its history streams in: drag the slider under the map
-  to watch continents drift, mountains rise and erode, and climates shift,
-  with every layer and the explain drawer available at each step.
+  or press Play to watch continents drift, mountains rise and erode, and
+  climates shift, with every layer and the explain drawer available at each
+  step. Export history writes the keyframes of the current layer as one PNG
+  strip.
+- Three views in the bar above the stage: Map, Globe (drag to turn, click to
+  inspect; software-rendered, no WebGL) and Compare (A follows the history
+  slider, B is any keyframe or any gallery planet, with the statistics in
+  two columns). A legend sits under the layer selector.
 
 ## Layout
 
