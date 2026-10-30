@@ -1,0 +1,28 @@
+/**
+ * Physical constants and grid-level constants. Every value has a source or a
+ * justification so tuning stays honest.
+ */
+
+/** Mean Earth radius (IUGG). */
+export const EARTH_RADIUS_KM = 6371.0088;
+
+/** Earth ocean volume (NOAA ETOPO1 estimate, 1.335e9 km^3). */
+export const EARTH_OCEAN_VOLUME_KM3 = 1.335e9;
+
+/** Earth surface area for the mean radius. */
+export const EARTH_SURFACE_KM2 = 4 * Math.PI * EARTH_RADIUS_KM * EARTH_RADIUS_KM;
+
+/** Icosahedron subdivision level used for an Earth-sized planet (DESIGN 3.1). */
+export const EARTH_LEVEL = 6;
+
+/** Clamp range for the subdivision level (DESIGN 3.1). */
+export const MIN_LEVEL = 4;
+export const MAX_LEVEL = 7;
+
+/** Number of cells (vertices of the subdivided icosahedron) at a level. */
+export function cellCount(level: number): number {
+  return 10 * 4 ** level + 2;
+}
+
+/** Target cell area: Earth surface divided by the Earth-level cell count (~12,450 km^2). */
+export const EARTH_CELL_AREA_KM2 = EARTH_SURFACE_KM2 / cellCount(EARTH_LEVEL);

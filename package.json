@@ -1,0 +1,22 @@
+{
+  "name": "geografia",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "A physically-constrained world-map simulator",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "check": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "render": "node scripts/render-png.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.5",
+    "vitest": "^5.0.5"
+  }
+}
