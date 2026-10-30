@@ -105,6 +105,14 @@ Calibration status after M3 (Earth preset, three seeds): mean land elevation 0.9
 6. Ice: sea ice where sea-surface temperature is below freezing; ice sheets where annual max land temperature is below zero (altitude included). The glacial-phase parameter lowers global temperature and sea level and extends ice. One iteration of albedo feedback.
 7. Koppen classification from monthly temperature and precipitation.
 
+Mechanisms as built in M4 (`climate/`):
+
+- Insolation: the exact daily-mean top-of-atmosphere integral per latitude and declination, 12 declination samples on a circular orbit, sample 0 being mid-January-like.
+- Temperature: the global mean follows the fourth root of insolation from Earth's 288 K; the annual mean of a cell is the global mean plus 0.17 degrees C per W/m^2 of annual insolation anomaly (meridional transport is implicit in that slope), minus a lapse rate of 6.5 K/km times relative gravity, minus up to 3 degrees of continental cooling. Seasons: the insolation cycle passes through a first-order thermal filter (time constant 1 sample on land, 2.5 on the ocean) and is scaled by a land or ocean response (0.10 or 0.03 degrees per W/m^2), blended by continentality (1 - exp(-distance to the ocean / 4 cells)). Ocean currents (M5) and ice albedo (M6) come later.
+- Circulation: the Hadley cell edge is 30 degrees divided by rotation rate and radius relative to Earth (Held-Hou scaling), the number of cells per hemisphere is 90 over that edge, clamped to 1 to 9, and the bands are equal in width. Even cells blow equatorward (easterlies after Coriolis deflection), odd cells poleward (westerlies); the deflection angle is atan(2 * relative rotation * |sin latitude|), 45 degrees at 30 N on Earth and zero for a slow rotator; wind speed peaks at 7 m/s mid-cell and vanishes at the cell edges (convergence and divergence zones). The whole pattern shifts with 35% of the previous sample's declination (the ITCZ migration). A monsoon term adds 2.5 m/s per degree C per cell of the smoothed seasonal temperature anomaly gradient, from cold toward warm, turned by half the Coriolis deflection.
+
+Calibration status after M4 (Earth preset): equator 27 degrees C, poles -13, global mean 12 (Earth 14 to 15; the deficit is the lapse rate on plateaus plus the absence of ocean heat transport to the coasts), seasonal range at 40 to 60 degrees of 23 degrees on land and 7.5 on the ocean (Earth about 25 to 30 and 8). The high-tilt preset makes the poles warmer than the mid-latitudes in the annual mean and doubles the seasonal ranges; the slow rotator gets one meridional cell per hemisphere.
+
 ### 3.6 Statistics per world
 
 Ocean fraction, mean temperature, ice fraction, desert fraction, forest fraction, number of continents, max elevation, max depth, number of plates, longest river, lake count.

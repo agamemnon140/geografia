@@ -1,17 +1,20 @@
 /**
  * Render a planet to a PNG from the command line, without a browser:
- *   node scripts/render-png.ts out.png [preset] [seed] [layer] [width]
+ *   node scripts/render-png.ts out.png [preset] [seed] [layer] [width] [sample]
+ * `sample` is a month index 0 to 11 for seasonal layers; omitted means annual.
  * Runs on Node's built-in TypeScript type stripping; imports only pure modules.
  */
 import { writeFileSync } from 'node:fs';
 import { layerById, paintLayer } from '../src/render/layers.ts';
 import { equirectRaster } from '../src/render/raster.ts';
+import { ANNUAL } from '../src/sim/climate/insolation.ts';
 import { Grid } from '../src/sim/grid/grid.ts';
 import { PRESETS } from '../src/sim/params.ts';
 import { build } from '../src/sim/pipeline.ts';
 import { encodePng } from './png.ts';
 
-const [, , outPath = 'planet.png', presetName = 'Earth', seedArg, layerId = 'elevation', widthArg] = process.argv;
+const [, , outPath = 'planet.png', presetName = 'Earth', seedArg, layerId = 'elevation', widthArg, sampleArg] = process.argv;
+const sample = sampleArg !== undefined ? Number(sampleArg) : ANNUAL;
 const preset = PRESETS.find((p) => p.name.toLowerCase() === presetName.toLowerCase());
 if (!preset) {
   console.error(`Unknown preset "${presetName}". Known: ${PRESETS.map((p) => p.name).join(', ')}`);
@@ -27,7 +30,7 @@ const t1 = performance.now();
 const raster = equirectRaster(Grid.get(world.level), width, height);
 const t2 = performance.now();
 const rgba = new Uint8ClampedArray(width * height * 4);
-paintLayer(world, raster, layerById(layerId), rgba);
+paintLayer(world, raster, layerById(layerId), rgba, sample);
 writeFileSync(outPath, encodePng(width, height, rgba));
 const t3 = performance.now();
 

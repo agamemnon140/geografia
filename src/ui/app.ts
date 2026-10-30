@@ -1,5 +1,6 @@
-import { LAYERS } from '../render/layers.ts';
+import { LAYERS, layerById, temperatureAt, windAt } from '../render/layers.ts';
 import { MapView } from '../render/map.ts';
+import { ANNUAL, SAMPLES } from '../sim/climate/insolation.ts';
 import { Grid, cellAreasKm2 } from '../sim/grid/grid.ts';
 import { CURRENT_MILESTONE, EARTH, PARAM_SPECS, PRESETS, type PlanetParams } from '../sim/params.ts';
 import type { World } from '../sim/pipeline.ts';
@@ -7,6 +8,11 @@ import { BOUNDARY_NAMES } from '../sim/tectonics/simulation.ts';
 import { SimClient } from '../worker/client.ts';
 
 const RAD = 180 / Math.PI;
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+function sampleName(sample: number): string {
+  return sample >= ANNUAL ? 'annual' : MONTHS[sample];
+}
 
 function template(): string {
   const presetOptions = PRESETS.map((p) => `<option value="${p.name}">${p.name}</option>`).join('');
@@ -37,6 +43,10 @@ function template(): string {
         <div id="status" class="status"></div>
         <h2>Layer</h2>
         <select id="layer">${layerOptions}</select>
+        <div id="sampleRow" class="row hidden">
+          <label>Month <input type="range" id="sample" min="0" max="${SAMPLES}" step="1" value="${ANNUAL}" /></label>
+          <span id="sampleLabel" class="unit">annual</span>
+        </div>
         <h2>Statistics</h2>
         <table id="stats" class="stats"></table>
         <h2>Cell</h2>
@@ -59,6 +69,9 @@ export function mountApp(root: HTMLElement): void {
   const progress = q<HTMLProgressElement>('#progress');
   const status = q<HTMLDivElement>('#status');
   const layerSelect = q<HTMLSelectElement>('#layer');
+  const sampleRow = q<HTMLDivElement>('#sampleRow');
+  const sampleInput = q<HTMLInputElement>('#sample');
+  const sampleLabel = q<HTMLSpanElement>('#sampleLabel');
   const statsTable = q<HTMLTableElement>('#stats');
   const inspector = q<HTMLDivElement>('#inspector');
   const inputs = new Map<keyof PlanetParams, HTMLInputElement>();
@@ -70,6 +83,8 @@ export function mountApp(root: HTMLElement): void {
   const client = new SimClient();
   let world: World | null = null;
   let building = false;
+  let selectedCell = -1;
+  let sample = ANNUAL;
 
   const setParams = (p: PlanetParams): void => {
     for (const [key, input] of inputs) input.value = String(p[key]);
@@ -101,13 +116,28 @@ export function mountApp(root: HTMLElement): void {
       ['Land in closed basins', `${(s.endorheicLandFraction * 100).toFixed(1)} %`],
       ['Longest river', `${s.longestRiverKm.toFixed(0)} km`],
       ['Largest river', `${s.largestRiverKm3.toFixed(0)} km³/yr`],
+      ['Mean temperature', `${s.meanTemperature.toFixed(1)} °C`],
+      ['Equator / poles', `${s.equatorTemperature.toFixed(1)} / ${s.poleTemperature.toFixed(1)} °C`],
+      ['Seasonal range 40–60°', `land ${s.landSeasonalRange.toFixed(0)}, ocean ${s.oceanSeasonalRange.toFixed(0)} °C`],
+      ['Circulation cells', `${s.circulationCells} per hemisphere`],
+      ['Hadley cell edge', `${s.hadleyEdgeDeg.toFixed(0)}°`],
     ];
     statsTable.innerHTML = rows.map(([k, v]) => `<tr><td>${k}</td><td>${v}</td></tr>`).join('');
   };
 
   const renderInspector = (cell: number): void => {
     if (!world) return;
+    selectedCell = cell;
     const grid = Grid.get(world.level);
+    let coldest = Infinity;
+    let warmest = -Infinity;
+    for (let s = 0; s < SAMPLES; s++) {
+      const t = temperatureAt(world, cell, s);
+      if (t < coldest) coldest = t;
+      if (t > warmest) warmest = t;
+    }
+    const [u, v] = windAt(world, cell, sample);
+    const bearing = ((Math.atan2(u, v) * RAD) + 360) % 360;
     const area = cellAreasKm2(grid, world.radiusKm)[cell];
     const rel = world.elevation[cell] - world.seaLevel;
     const orogeny = world.orogenyStep[cell];
@@ -140,6 +170,12 @@ export function mountApp(root: HTMLElement): void {
       `drains to   ${drainsTo}`,
     ];
     if (lakeLine) lines.push(lakeLine);
+    lines.push(
+      `insolation  ${world.insolationAnnual[cell].toFixed(0)} W/m² annual mean`,
+      `temperature ${world.temperatureAnnual[cell].toFixed(1)} °C annual, ${coldest.toFixed(1)} to ${warmest.toFixed(1)} °C over the year`,
+      `continental ${(world.continentality[cell] * 100).toFixed(0)} %`,
+      `wind        ${sampleName(sample)}: ${Math.hypot(u, v).toFixed(1)} m/s toward ${bearing.toFixed(0)}° (east ${u.toFixed(1)}, north ${v.toFixed(1)})`,
+    );
     inspector.textContent = lines.join('\n');
   };
 
@@ -157,6 +193,7 @@ export function mountApp(root: HTMLElement): void {
         status.textContent = stage;
       });
       world = result.world;
+      selectedCell = -1;
       map.setWorld(world);
       renderStats(world);
       inspector.textContent = 'Click the map to inspect a cell.';
@@ -180,7 +217,16 @@ export function mountApp(root: HTMLElement): void {
     if (seedInput) seedInput.value = String(crypto.getRandomValues(new Uint32Array(1))[0]);
     void runBuild();
   });
-  layerSelect.addEventListener('change', () => map.setLayer(layerSelect.value));
+  layerSelect.addEventListener('change', () => {
+    map.setLayer(layerSelect.value);
+    sampleRow.classList.toggle('hidden', !layerById(layerSelect.value).seasonal);
+  });
+  sampleInput.addEventListener('input', () => {
+    sample = Number(sampleInput.value);
+    sampleLabel.textContent = sampleName(sample);
+    map.setSample(sample);
+    if (selectedCell >= 0) renderInspector(selectedCell);
+  });
   map.onCellClick(renderInspector);
 
   setParams(EARTH);

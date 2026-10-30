@@ -1,0 +1,34 @@
+import { DEG } from '../grid/geometry.ts';
+
+/** Solar constant at Earth's orbit, W/m^2 (Kopp and Lean 2011). */
+export const SOLAR_CONSTANT = 1361;
+/** Samples per year (DESIGN 3.5: 12 declination samples with thermal inertia). */
+export const SAMPLES = 12;
+/** Index used by layers and the inspector for the annual mean instead of a sample. */
+export const ANNUAL = SAMPLES;
+
+/**
+ * Solar declination (radians) of each sample. Sample 0 is mid-January-like
+ * (southern summer), sample 6 the opposite; equinoxes fall between samples 2
+ * and 3 and between 8 and 9. The orbit is circular: no eccentricity term.
+ */
+export function declinations(tiltDeg: number): Float64Array {
+  const out = new Float64Array(SAMPLES);
+  for (let s = 0; s < SAMPLES; s++) out[s] = -tiltDeg * DEG * Math.cos((2 * Math.PI * (s + 0.5)) / SAMPLES);
+  return out;
+}
+
+/**
+ * Daily-mean insolation at the top of the atmosphere for a latitude and a
+ * declination, W/m^2: the standard integral over the day with the sunrise
+ * hour angle h0, handling polar day (h0 = pi) and polar night (zero).
+ */
+export function dailyMeanInsolation(lat: number, declination: number, s0: number): number {
+  const x = -Math.tan(lat) * Math.tan(declination);
+  let h0: number;
+  if (x <= -1) h0 = Math.PI;
+  else if (x >= 1) return 0;
+  else h0 = Math.acos(x);
+  const q = (s0 / Math.PI) * (h0 * Math.sin(lat) * Math.sin(declination) + Math.cos(lat) * Math.cos(declination) * Math.sin(h0));
+  return q > 0 ? q : 0;
+}

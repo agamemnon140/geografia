@@ -1,3 +1,4 @@
+import { ANNUAL } from '../sim/climate/insolation.ts';
 import type { World } from '../sim/pipeline.ts';
 import {
   BOUNDARY_CONVERGENT,
@@ -8,11 +9,70 @@ import {
 import { cellDebugColor, hypsometric, mix, ramp, type RGB, type Stop } from './colors.ts';
 import type { Raster } from './raster.ts';
 
-/** A map layer: a color per cell. Painting to pixels goes through the raster lookup. */
+/**
+ * A map layer: a color per cell. Painting to pixels goes through the raster
+ * lookup. Seasonal layers take a sample index (0 to 11) or ANNUAL.
+ */
 export interface Layer {
   id: string;
   name: string;
-  cellColor(world: World, cell: number): RGB;
+  /** True when the layer changes with the sample (month) selector. */
+  seasonal?: boolean;
+  cellColor(world: World, cell: number, sample: number): RGB;
+}
+
+const TEMPERATURE_RAMP: Stop[] = [
+  [-40, [60, 0, 90]],
+  [-20, [50, 60, 190]],
+  [-5, [90, 170, 230]],
+  [5, [170, 225, 200]],
+  [15, [200, 220, 90]],
+  [25, [240, 150, 50]],
+  [35, [200, 40, 30]],
+  [45, [120, 0, 20]],
+];
+
+/** Temperature of a cell for a sample index or ANNUAL. */
+export function temperatureAt(world: World, cell: number, sample: number): number {
+  return sample >= ANNUAL ? world.temperatureAnnual[cell] : world.temperature[sample * world.n + cell];
+}
+
+/** Wind of a cell (east, north, m/s) for a sample index; ANNUAL averages the samples. */
+export function windAt(world: World, cell: number, sample: number): [number, number] {
+  if (sample < ANNUAL) return [world.windU[sample * world.n + cell], world.windV[sample * world.n + cell]];
+  let u = 0;
+  let v = 0;
+  for (let s = 0; s < ANNUAL; s++) {
+    u += world.windU[s * world.n + cell];
+    v += world.windV[s * world.n + cell];
+  }
+  return [u / ANNUAL, v / ANNUAL];
+}
+
+/** Wind direction as a hue (blowing east = red, north = yellow-green, west = cyan, south = violet), speed as brightness. */
+function windColor(u: number, v: number, dim: number): RGB {
+  const speed = Math.hypot(u, v);
+  const hue = ((Math.atan2(v, u) + 2 * Math.PI) % (2 * Math.PI)) / (2 * Math.PI);
+  const value = Math.min(1, 0.25 + speed / 10) * dim;
+  return hsvColor(hue, 0.85, value);
+}
+
+function hsvColor(h: number, s: number, v: number): RGB {
+  const i = Math.floor(h * 6);
+  const f = h * 6 - i;
+  const p = v * (1 - s);
+  const q = v * (1 - f * s);
+  const t = v * (1 - (1 - f) * s);
+  let r: number, g: number, b: number;
+  switch (i % 6) {
+    case 0: r = v; g = t; b = p; break;
+    case 1: r = q; g = v; b = p; break;
+    case 2: r = p; g = v; b = t; break;
+    case 3: r = p; g = q; b = v; break;
+    case 4: r = t; g = p; b = v; break;
+    default: r = v; g = p; b = q; break;
+  }
+  return [r * 255, g * 255, b * 255];
 }
 
 const BOUNDARY_COLORS: Record<number, RGB> = {
@@ -80,6 +140,25 @@ export const LAYERS: Layer[] = [
     },
   },
   {
+    id: 'temperature',
+    name: 'Temperature',
+    seasonal: true,
+    cellColor: (world, i, sample) => {
+      const c = ramp(TEMPERATURE_RAMP, temperatureAt(world, i, sample));
+      if (world.elevation[i] >= world.seaLevel) return c;
+      return [c[0] * 0.75, c[1] * 0.75, c[2] * 0.8];
+    },
+  },
+  {
+    id: 'wind',
+    name: 'Surface wind (hue = direction)',
+    seasonal: true,
+    cellColor: (world, i, sample) => {
+      const [u, v] = windAt(world, i, sample);
+      return windColor(u, v, world.elevation[i] >= world.seaLevel ? 1 : 0.7);
+    },
+  },
+  {
     id: 'precipitation',
     name: 'Precipitation (proxy)',
     cellColor: (world, i) => {
@@ -122,11 +201,11 @@ export function layerById(id: string): Layer {
 }
 
 /** Fill an RGBA buffer (4 bytes per pixel, raster-sized) with the layer's colors. */
-export function paintLayer(world: World, raster: Raster, layer: Layer, out: Uint8ClampedArray): void {
+export function paintLayer(world: World, raster: Raster, layer: Layer, out: Uint8ClampedArray, sample = ANNUAL): void {
   const n = world.n;
   const colors = new Uint8ClampedArray(n * 3);
   for (let i = 0; i < n; i++) {
-    const [r, g, b] = layer.cellColor(world, i);
+    const [r, g, b] = layer.cellColor(world, i, sample);
     colors[3 * i] = r;
     colors[3 * i + 1] = g;
     colors[3 * i + 2] = b;

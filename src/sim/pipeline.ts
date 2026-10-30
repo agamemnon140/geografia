@@ -1,3 +1,5 @@
+import { computeClimate } from './climate/climate.ts';
+import type { CirculationInfo } from './climate/circulation.ts';
 import { Grid, cellAreasKm2, levelForRadius } from './grid/grid.ts';
 import type { LakeInfo } from './hydrology/routing.ts';
 import { validateParams, type PlanetParams } from './params.ts';
@@ -14,8 +16,9 @@ export interface PlateInfo {
  * A built planet. Plain data and typed arrays only, so it can be posted from
  * the worker and later stored per step for the timeline. Elevations are
  * absolute meters in the model frame; subtract `seaLevel` for height above
- * the sea. Per-cell crust and water fields are the provenance the inspector
- * shows.
+ * the sea. Per-cell crust, water and climate fields are the provenance the
+ * inspector shows. Seasonal fields hold 12 samples, sample-major
+ * (sample * n + cell).
  */
 export interface World {
   params: PlanetParams;
@@ -57,6 +60,21 @@ export interface World {
   /** Longest flow path ending in the cell, km. */
   riverLength: Float64Array;
   lakes: LakeInfo[];
+  /** Annual-mean top-of-atmosphere insolation, W/m^2. */
+  insolationAnnual: Float64Array;
+  /** 0 on the ocean, toward 1 deep inside continents. */
+  continentality: Float64Array;
+  /** Annual-mean surface temperature, degrees C. */
+  temperatureAnnual: Float64Array;
+  /** Surface temperature per sample, degrees C. */
+  temperature: Float64Array;
+  /** Eastward surface wind per sample, m/s. */
+  windU: Float64Array;
+  /** Northward surface wind per sample, m/s. */
+  windV: Float64Array;
+  circulation: CirculationInfo;
+  /** Global mean sea-level temperature for this insolation, degrees C. */
+  globalMeanTemperature: number;
   plates: PlateInfo[];
   /** World cells of the mantle hotspots. */
   hotspots: number[];
@@ -72,6 +90,8 @@ export function worldBuffers(world: World): ArrayBuffer[] {
     world.volcanic, world.sediment, world.eroded, world.orogenyStep, world.boundary,
     world.precipitation, world.discharge, world.downstream, world.waterLevel, world.lake,
     world.mouth, world.riverLength,
+    world.insolationAnnual, world.continentality, world.temperatureAnnual, world.temperature,
+    world.windU, world.windV,
   ];
   return arrays.map((a) => a.buffer as ArrayBuffer);
 }
@@ -86,15 +106,18 @@ export function build(input: PlanetParams, onProgress: Progress = () => {}): Wor
 
   onProgress('tectonics', 0.05);
   const sim = new TectonicsSim(grid, params, rng.fork('tectonics'));
-  sim.run(params.tectonicAge, (f) => onProgress('tectonics', 0.05 + 0.8 * f));
+  sim.run(params.tectonicAge, (f) => onProgress('tectonics', 0.05 + 0.75 * f));
 
   // Final hydrology on the finished relief. M5 will feed the climate's precipitation here.
-  onProgress('hydrology', 0.86);
+  onProgress('hydrology', 0.82);
   const hydro = sim.hydrology;
   hydro.applyProxyPrecipitation(sim.elevation, sim.seaLevel);
   hydro.run(sim.elevation, sim.seaLevel);
 
-  onProgress('stats', 0.92);
+  onProgress('climate', 0.88);
+  const climate = computeClimate(grid, params, sim.elevation, sim.seaLevel, hydro.oceanDistance);
+
+  onProgress('stats', 0.95);
   const n = grid.n;
   const pool = sim.pool;
   const claim = sim.wParcel;
@@ -119,6 +142,7 @@ export function build(input: PlanetParams, onProgress: Progress = () => {}): Wor
   const stats = computeStats(
     { elevation: sim.elevation, areaKm2, seaLevel: sim.seaLevel, crustType, thickness, activePlates: sim.activePlates() },
     { precipitation: hydro.precipitation, discharge: hydro.discharge, lake: hydro.lake, mouth: hydro.mouth, riverLength: hydro.riverLength, lakes: hydro.lakes },
+    { lat: grid.lat, temperatureAnnual: climate.temperature.annual, temperature: climate.temperature.samples, circulation: climate.circulation },
   );
 
   onProgress('done', 1);
@@ -147,6 +171,14 @@ export function build(input: PlanetParams, onProgress: Progress = () => {}): Wor
     mouth: hydro.mouth,
     riverLength: hydro.riverLength,
     lakes: hydro.lakes,
+    insolationAnnual: climate.temperature.insolationAnnual,
+    continentality: climate.temperature.continentality,
+    temperatureAnnual: climate.temperature.annual,
+    temperature: climate.temperature.samples,
+    windU: climate.windU,
+    windV: climate.windV,
+    circulation: climate.circulation,
+    globalMeanTemperature: climate.globalMeanTemperature,
     plates: sim.plates.map((p) => ({ axis: [p.axis[0], p.axis[1], p.axis[2]], rate: p.rate })),
     hotspots: Array.from(sim.hotspots),
     stats,

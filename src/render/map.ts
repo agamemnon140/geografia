@@ -1,3 +1,4 @@
+import { ANNUAL } from '../sim/climate/insolation.ts';
 import { Grid } from '../sim/grid/grid.ts';
 import type { World } from '../sim/pipeline.ts';
 import { layerById, paintLayer } from './layers.ts';
@@ -13,6 +14,7 @@ export class MapView {
   private world: World | null = null;
   private raster: Raster | null = null;
   private layerId = 'elevation';
+  private sample = ANNUAL;
   private selected = -1;
   private clickHandlers: ((cell: number) => void)[] = [];
 
@@ -41,6 +43,12 @@ export class MapView {
     this.draw();
   }
 
+  /** Sample index 0 to 11, or ANNUAL. */
+  setSample(sample: number): void {
+    this.sample = sample;
+    this.draw();
+  }
+
   select(cell: number): void {
     this.selected = cell;
     this.draw();
@@ -52,7 +60,7 @@ export class MapView {
 
   draw(): void {
     if (!this.world || !this.raster) return;
-    paintLayer(this.world, this.raster, layerById(this.layerId), this.image.data);
+    paintLayer(this.world, this.raster, layerById(this.layerId), this.image.data, this.sample);
     this.ctx.putImageData(this.image, 0, 0);
     if (this.selected >= 0) this.drawMarker(this.selected);
   }

@@ -1,3 +1,6 @@
+import type { CirculationInfo } from './climate/circulation.ts';
+import { SAMPLES } from './climate/insolation.ts';
+import { DEG } from './grid/geometry.ts';
 import type { LakeInfo } from './hydrology/routing.ts';
 
 /** Per-world summary statistics (DESIGN 3.6). Grows with each milestone. */
@@ -31,6 +34,25 @@ export interface WorldStats {
   longestRiverKm: number;
   /** Largest discharge anywhere, km^3 per year (found at a river mouth). */
   largestRiverKm3: number;
+  /** Area-weighted annual-mean surface temperature, degrees C. */
+  meanTemperature: number;
+  /** Annual mean within 5 degrees of the equator. */
+  equatorTemperature: number;
+  /** Annual mean poleward of 80 degrees, both poles. */
+  poleTemperature: number;
+  /** Mean seasonal range (warmest minus coldest sample) over land between 40 and 60 degrees. */
+  landSeasonalRange: number;
+  /** The same over the ocean. */
+  oceanSeasonalRange: number;
+  circulationCells: number;
+  hadleyEdgeDeg: number;
+}
+
+export interface ClimateFields {
+  lat: Float64Array;
+  temperatureAnnual: Float64Array;
+  temperature: Float64Array;
+  circulation: CirculationInfo;
 }
 
 export interface ReliefFields {
@@ -51,9 +73,19 @@ export interface HydrologyFields {
   lakes: LakeInfo[];
 }
 
-export function computeStats(relief: ReliefFields, hydro: HydrologyFields): WorldStats {
+export function computeStats(relief: ReliefFields, hydro: HydrologyFields, climate: ClimateFields): WorldStats {
   const { elevation, areaKm2, seaLevel, crustType, thickness } = relief;
+  const n = elevation.length;
   let total = 0;
+  let tempSum = 0;
+  let equatorSum = 0;
+  let equatorArea = 0;
+  let poleSum = 0;
+  let poleArea = 0;
+  let landRangeSum = 0;
+  let landRangeArea = 0;
+  let oceanRangeSum = 0;
+  let oceanRangeArea = 0;
   let ocean = 0;
   let continental = 0;
   let min = Infinity;
@@ -86,6 +118,32 @@ export function computeStats(relief: ReliefFields, hydro: HydrologyFields): Worl
     }
     if (crustType[i] === 1) continental += a;
     if (thickness[i] > maxThickness) maxThickness = thickness[i];
+    const t = climate.temperatureAnnual[i];
+    tempSum += a * t;
+    const absLat = Math.abs(climate.lat[i]) / DEG;
+    if (absLat < 5) {
+      equatorSum += a * t;
+      equatorArea += a;
+    } else if (absLat > 80) {
+      poleSum += a * t;
+      poleArea += a;
+    }
+    if (absLat >= 40 && absLat <= 60) {
+      let lo = Infinity;
+      let hi = -Infinity;
+      for (let s = 0; s < SAMPLES; s++) {
+        const v = climate.temperature[s * n + i];
+        if (v < lo) lo = v;
+        if (v > hi) hi = v;
+      }
+      if (e < 0) {
+        oceanRangeSum += a * (hi - lo);
+        oceanRangeArea += a;
+      } else {
+        landRangeSum += a * (hi - lo);
+        landRangeArea += a;
+      }
+    }
     if (hydro.riverLength[i] > longest) longest = hydro.riverLength[i];
     if (hydro.discharge[i] > largest) largest = hydro.discharge[i];
     const bin = Math.min(HYPSOMETRY_BINS - 1, Math.max(0, Math.floor((e - HYPSOMETRY_MIN_M) / HYPSOMETRY_BIN_M)));
@@ -113,5 +171,12 @@ export function computeStats(relief: ReliefFields, hydro: HydrologyFields): Worl
     endorheicLandFraction: land > 0 ? endorheicArea / land : 0,
     longestRiverKm: longest,
     largestRiverKm3: largest,
+    meanTemperature: tempSum / total,
+    equatorTemperature: equatorArea > 0 ? equatorSum / equatorArea : NaN,
+    poleTemperature: poleArea > 0 ? poleSum / poleArea : NaN,
+    landSeasonalRange: landRangeArea > 0 ? landRangeSum / landRangeArea : 0,
+    oceanSeasonalRange: oceanRangeArea > 0 ? oceanRangeSum / oceanRangeArea : 0,
+    circulationCells: climate.circulation.cells,
+    hadleyEdgeDeg: climate.circulation.hadleyEdgeDeg,
   };
 }

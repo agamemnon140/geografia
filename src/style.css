@@ -60,6 +60,15 @@ body {
   flex: 1;
 }
 
+.row.hidden {
+  display: none;
+}
+
+input[type="range"] {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
 select,
 input[type="number"],
 button {
