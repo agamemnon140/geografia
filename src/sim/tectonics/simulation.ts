@@ -1056,11 +1056,29 @@ export class TectonicsSim {
    * down the network and settle at the river mouth: deltas on the shelf,
    * fills in lakes and closed basins.
    */
+  /**
+   * Precipitation and open-water evaporation (mm per year) from the climate
+   * stage, used by the fluvial passes instead of the proxy until replaced;
+   * null restores the proxy (DESIGN 9.1: real precipitation inside the loop).
+   */
+  setPrecipitation(precipitation: Float64Array | null, evaporation: Float64Array | null): void {
+    this.externalPrecipitation = precipitation;
+    this.externalEvaporation = evaporation;
+  }
+
+  private externalPrecipitation: Float64Array | null = null;
+  private externalEvaporation: Float64Array | null = null;
+
   private erodeFluvial(): void {
     const grid = this.grid;
     const hydro = this.hydrology;
     this.computeElevation();
-    hydro.applyProxyPrecipitation(this.elevation, this.seaLevel);
+    if (this.externalPrecipitation) {
+      hydro.precipitation.set(this.externalPrecipitation);
+      hydro.evaporation = this.externalEvaporation;
+    } else {
+      hydro.applyProxyPrecipitation(this.elevation, this.seaLevel);
+    }
     hydro.run(this.elevation, this.seaLevel);
     const elevation = this.elevation;
     const sea = this.seaLevel;

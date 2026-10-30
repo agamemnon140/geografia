@@ -105,16 +105,15 @@ export function explainCell(world: World, cell: number, sample: number): Section
   // Climate: the annual mean is the global mean plus stored terms; the ice albedo is the remainder.
   const [tLo, tHi] = range((s) => temperatureAt(world, cell, s));
   const t = world.temperatureAnnual[cell];
-  const insolationTerm = world.temperatureInsolation[cell];
+  const balanceTerm = world.temperatureBalance[cell];
   const lapseTerm = world.temperatureLapse[cell];
   const continentalTerm = world.temperatureContinental[cell];
   const current = world.sstAnomaly[cell];
-  const ice = t - (world.globalMeanTemperature + insolationTerm + lapseTerm + continentalTerm + current);
   const [u, v] = windAt(world, cell, sample);
   const climate: string[] = [
     `temperature ${t.toFixed(1)} °C annual (${tLo.toFixed(1)} to ${tHi.toFixed(1)} over the year)`,
-    `  = global ${world.globalMeanTemperature.toFixed(1)} ${signed(insolationTerm, 1)} insolation ${signed(lapseTerm, 1)} altitude ` +
-      `${signed(continentalTerm, 1)} continentality ${signed(current, 1)} currents ${signed(ice, 1)} ice albedo`,
+    `  = global ${world.globalMeanTemperature.toFixed(1)} ${signed(balanceTerm, 1)} energy balance (sunlight, albedo, transport) ` +
+      `${signed(lapseTerm, 1)} altitude ${signed(continentalTerm, 1)} continentality ${signed(current, 1)} currents`,
     `insolation  ${world.insolationAnnual[cell].toFixed(0)} W/m² annual mean at the top of the atmosphere`,
     `wind        ${sampleName(sample)}: ${Math.hypot(u, v).toFixed(1)} m/s toward ${bearing(u, v)}`,
   ];

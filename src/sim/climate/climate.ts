@@ -1,20 +1,25 @@
 import type { Grid } from '../grid/grid.ts';
 import type { PlanetParams } from '../params.ts';
 import { circulationCells, computeWinds, type CirculationInfo } from './circulation.ts';
-import { computeIce, type IceFields } from './ice.ts';
+import { classifyIce, surfaceAlbedo, type IceFields } from './ice.ts';
 import { SAMPLES, declinations } from './insolation.ts';
 import { meshGeometry } from './mesh.ts';
 import { computeMoisture, type MoistureFields } from './moisture.ts';
 import { computeOcean, type OceanFields } from './ocean.ts';
-import { computeTemperature, globalMeanTemperature, type TemperatureFields } from './temperature.ts';
+import { computeTemperature, type TemperatureFields } from './temperature.ts';
+
+/** Rounds of energy balance and ice extent; each round feeds the ice albedo back (snowballs need several). */
+export const ALBEDO_ITERATIONS = 5;
+/** Stop iterating when no cell's albedo changes by more than this. */
+export const ALBEDO_TOLERANCE = 0.01;
 
 /** Everything the climate stage produces (DESIGN 3.5 steps 1 to 6; Koppen is classified by the pipeline once the rivers are final). */
 export interface Climate {
   circulation: CirculationInfo;
-  /** Global mean surface temperature at sea level for this insolation and glacial phase, degrees C. */
+  /** Global mean sea-level temperature from the energy balance, degrees C. */
   globalMeanTemperature: number;
   declinations: Float64Array;
-  /** Temperature with the ocean-current and ice-albedo corrections applied. */
+  /** Temperature with the ice albedo iterated and the ocean-current correction applied. */
   temperature: TemperatureFields;
   /** Eastward wind per sample, sample-major, m/s. */
   windU: Float64Array;
@@ -23,6 +28,8 @@ export interface Climate {
   ocean: OceanFields;
   ice: IceFields;
   moisture: MoistureFields;
+  /** Albedo rounds it took for the ice extent to settle. */
+  albedoRounds: number;
 }
 
 /**
@@ -39,26 +46,43 @@ export function computeClimate(
   oceanDistance: Int32Array,
   lake: Int32Array,
 ): Climate {
+  const n = grid.n;
   const mesh = meshGeometry(grid);
   const decl = declinations(params.axialTiltDeg);
-  const temperature = computeTemperature(grid, params, decl, elevation, seaLevel, oceanDistance);
+
+  // Energy balance and ice albedo, iterated until the ice extent settles.
+  const albedo = new Float64Array(n);
+  const nextAlbedo = new Float64Array(n);
+  surfaceAlbedo(grid, elevation, seaLevel, null, albedo);
+  let temperature = computeTemperature(grid, params, decl, elevation, seaLevel, oceanDistance, albedo);
+  let ice = classifyIce(grid, temperature, elevation, seaLevel, areaKm2);
+  let rounds = 1;
+  for (; rounds < ALBEDO_ITERATIONS; rounds++) {
+    surfaceAlbedo(grid, elevation, seaLevel, ice, nextAlbedo);
+    let change = 0;
+    for (let i = 0; i < n; i++) change = Math.max(change, Math.abs(nextAlbedo[i] - albedo[i]));
+    if (change < ALBEDO_TOLERANCE) break;
+    albedo.set(nextAlbedo);
+    temperature = computeTemperature(grid, params, decl, elevation, seaLevel, oceanDistance, albedo);
+    ice = classifyIce(grid, temperature, elevation, seaLevel, areaKm2);
+  }
+
   const circulation = circulationCells(params);
   const winds = computeWinds(grid, params, circulation, decl, temperature);
   const ocean = computeOcean(grid, params, mesh, elevation, seaLevel, areaKm2, winds.u, winds.v, temperature.annual);
   // Currents feed back into temperature: the same anomaly in every sample (DESIGN 3.5 step 2).
-  const n = grid.n;
   for (let i = 0; i < n; i++) {
     const a = ocean.sstAnomaly[i];
     if (a === 0) continue;
     temperature.annual[i] += a;
     for (let s = 0; s < SAMPLES; s++) temperature.samples[s * n + i] += a;
   }
-  // Ice and its albedo cooling come before moisture: frozen seas barely evaporate.
-  const ice = computeIce(grid, temperature, elevation, seaLevel, areaKm2);
+  // Warm and cold currents move the ice edge; frozen seas barely evaporate, so ice comes before moisture.
+  ice = classifyIce(grid, temperature, elevation, seaLevel, areaKm2);
   const moisture = computeMoisture(grid, params.radiusKm, elevation, seaLevel, lake, winds.u, winds.v, temperature.samples);
   return {
     circulation,
-    globalMeanTemperature: globalMeanTemperature(params.insolation, params.glacialPhase),
+    globalMeanTemperature: temperature.globalMean,
     declinations: decl,
     temperature,
     windU: winds.u,
@@ -66,5 +90,6 @@ export function computeClimate(
     ocean,
     ice,
     moisture,
+    albedoRounds: rounds,
   };
 }

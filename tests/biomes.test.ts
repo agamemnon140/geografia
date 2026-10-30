@@ -38,8 +38,9 @@ describe('ice with the Earth preset', () => {
     expect(cold.stats.iceSheetFraction).toBeGreaterThan(warm.stats.iceSheetFraction);
     expect(cold.iceVolumeKm3).toBeGreaterThan(warm.iceVolumeKm3);
     expect(cold.seaLevel).toBeLessThan(warm.seaLevel);
-    // Both share the same tectonic history; only the water locked in ice differs.
-    expect(cold.loopSeaLevel).toBe(warm.loopSeaLevel);
+    // The climate feeds the erosion inside the loop, so the two histories differ a little; the
+    // water locked in ice dominates the sea-level difference.
+    expect(Math.abs(cold.loopSeaLevel - warm.loopSeaLevel)).toBeLessThan(0.2 * (warm.seaLevel - cold.seaLevel));
     expect(warm.seaLevel).toBeLessThanOrEqual(warm.loopSeaLevel);
   });
 });

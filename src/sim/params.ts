@@ -24,6 +24,12 @@ export interface PlanetParams {
   glacialPhase: number;
   /** Mantle heat flux relative to Earth: plate speed, hotspot volcanism and rifting rate. */
   mantleHeat: number;
+  /** Greenhouse strength relative to Earth (logarithmic forcing, like carbon dioxide). */
+  greenhouse: number;
+  /** Surface pressure in bar: heat transport, pressure broadening, thermal inertia. */
+  pressureBar: number;
+  /** Orbital eccentricity: unequal seasons between the hemispheres. */
+  eccentricity: number;
 }
 
 export interface ParamSpec {
@@ -40,7 +46,7 @@ export interface ParamSpec {
 }
 
 /** Milestone currently implemented; parameters wired in later milestones are shown disabled. */
-export const CURRENT_MILESTONE = 8;
+export const CURRENT_MILESTONE = 9;
 
 export const PARAM_SPECS: ParamSpec[] = [
   { key: 'seed', label: 'Seed', min: 0, max: 4294967295, step: 1, unit: '', wiredIn: 1, help: 'All randomness' },
@@ -54,6 +60,9 @@ export const PARAM_SPECS: ParamSpec[] = [
   { key: 'tectonicAge', label: 'Tectonic age', min: 50, max: 400, step: 10, unit: 'steps', wiredIn: 2, help: 'Loop length: more orogenies, more erosion' },
   { key: 'glacialPhase', label: 'Glacial phase', min: 0, max: 1, step: 0.05, unit: '', wiredIn: 6, help: 'Temperature offset, sea-level drop, ice extent' },
   { key: 'mantleHeat', label: 'Mantle heat', min: 0.3, max: 3, step: 0.1, unit: 'x Earth', wiredIn: 8, help: 'Plate speed, hotspot volcanism, rifting rate' },
+  { key: 'greenhouse', label: 'Greenhouse', min: 0.2, max: 5, step: 0.1, unit: 'x Earth', wiredIn: 9, help: 'Longwave trapping: global temperature, ice extent' },
+  { key: 'pressureBar', label: 'Air pressure', min: 0.1, max: 10, step: 0.1, unit: 'bar', wiredIn: 9, help: 'Heat transport to the poles, pressure broadening, seasonal inertia' },
+  { key: 'eccentricity', label: 'Eccentricity', min: 0, max: 0.3, step: 0.01, unit: '', wiredIn: 9, help: 'Unequal seasons between hemispheres (perihelion in southern summer)' },
 ];
 
 export const EARTH: PlanetParams = {
@@ -68,6 +77,9 @@ export const EARTH: PlanetParams = {
   tectonicAge: 200,
   glacialPhase: 0,
   mantleHeat: 1,
+  greenhouse: 1,
+  pressureBar: 1,
+  eccentricity: 0.0167,
 };
 
 export interface Preset {
@@ -85,6 +97,9 @@ export const PRESETS: Preset[] = [
   { name: 'Snowball', params: { ...EARTH, insolation: 0.85, glacialPhase: 1 } },
   { name: 'Young planet', params: { ...EARTH, tectonicAge: 50 } },
   { name: 'Hot mantle', params: { ...EARTH, mantleHeat: 2.5, tectonicAge: 300 } },
+  { name: 'Greenhouse', params: { ...EARTH, greenhouse: 3 } },
+  { name: 'Thin air', params: { ...EARTH, pressureBar: 0.3 } },
+  { name: 'Eccentric orbit', params: { ...EARTH, eccentricity: 0.2 } },
 ];
 
 /** Clamp every parameter into its spec range and normalize the seed to uint32. */

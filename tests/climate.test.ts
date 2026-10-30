@@ -113,10 +113,14 @@ describe('temperature with the Earth preset', () => {
     }
   });
 
-  it('loses its seasons without tilt and cools with less insolation', () => {
-    const flat = build({ ...QUICK, axialTiltDeg: 0 });
+  it('loses its seasons without tilt (bar the orbit) and cools with less insolation', () => {
+    const flat = build({ ...QUICK, axialTiltDeg: 0, eccentricity: 0 });
     expect(flat.stats.landSeasonalRange).toBeLessThan(0.01);
     expect(flat.stats.oceanSeasonalRange).toBeLessThan(0.01);
+    // Earth's small eccentricity alone leaves a faint cycle.
+    const orbitOnly = build({ ...QUICK, axialTiltDeg: 0 });
+    expect(orbitOnly.stats.landSeasonalRange).toBeGreaterThan(0.01);
+    expect(orbitOnly.stats.landSeasonalRange).toBeLessThan(3);
     const dim = build({ ...QUICK, insolation: 0.85 });
     expect(dim.stats.meanTemperature).toBeLessThan(worlds[0].stats.meanTemperature - 5);
     expect(dim.globalMeanTemperature).toBeLessThan(worlds[0].globalMeanTemperature);

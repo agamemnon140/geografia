@@ -2,6 +2,7 @@ import { computeClimate } from './climate/climate.ts';
 import type { CirculationInfo } from './climate/circulation.ts';
 import { classifyKoppen } from './climate/koppen.ts';
 import { evaporationRate } from './climate/moisture.ts';
+import { prolongate } from './climate/multilevel.ts';
 import type { BasinInfo } from './climate/ocean.ts';
 import { MAX_LEVEL, MIN_LEVEL } from './constants.ts';
 import { Grid, cellAreasKm2, levelForRadius } from './grid/grid.ts';
@@ -103,8 +104,8 @@ export interface World {
   temperatureAnnual: FloatArray;
   /** Surface temperature per sample, degrees C. */
   temperature: FloatArray;
-  /** Temperature components: the annual mean is the global mean plus these, plus the current anomaly, plus the ice cooling. */
-  temperatureInsolation: FloatArray;
+  /** Temperature components: the annual mean is the global mean plus these, plus the current anomaly. The balance term holds insolation, albedo and heat transport. */
+  temperatureBalance: FloatArray;
   temperatureLapse: FloatArray;
   temperatureContinental: FloatArray;
   /** Eastward surface wind per sample, m/s. */
@@ -152,7 +153,7 @@ export function worldBuffers(world: World): ArrayBuffer[] {
     world.precipitationOrographic, world.precipitationConvergence,
     world.discharge, world.downstream, world.waterLevel, world.lake, world.mouth, world.riverLength,
     world.insolationAnnual, world.continentality, world.temperatureAnnual, world.temperature,
-    world.temperatureInsolation, world.temperatureLapse, world.temperatureContinental,
+    world.temperatureBalance, world.temperatureLapse, world.temperatureContinental,
     world.windU, world.windV,
     world.basin, world.streamfunction, world.currentU, world.currentV, world.sstAnomaly,
     world.seaIceMonths, world.iceSheet, world.koppen,
@@ -345,7 +346,7 @@ export function finalize(ctx: BuildContext, state: ReliefState, onProgress: Prog
     continentality: climate.temperature.continentality,
     temperatureAnnual: climate.temperature.annual,
     temperature: climate.temperature.samples,
-    temperatureInsolation: climate.temperature.insolationTerm,
+    temperatureBalance: climate.temperature.balanceTerm,
     temperatureLapse: climate.temperature.lapseTerm,
     temperatureContinental: climate.temperature.continentalTerm,
     windU: climate.windU,
@@ -367,6 +368,24 @@ export function finalize(ctx: BuildContext, state: ReliefState, onProgress: Prog
     events: state.events,
     stats,
   };
+}
+
+/** Steps between in-loop climate updates that feed real precipitation to the fluvial erosion. */
+export const IN_LOOP_CLIMATE_INTERVAL = 25;
+/** Levels below the planet's own at which the in-loop climate runs (level 4 for Earth: a tenth of a second per update). */
+export const IN_LOOP_CLIMATE_COARSER = 2;
+
+/** Prolongate a coarse field up to a finer grid through the intermediate levels. */
+export function liftToLevel(coarse: Grid, fine: Grid, field: Float64Array): Float64Array {
+  let current = field;
+  for (let level = coarse.level; level < fine.level; level++) {
+    const from = Grid.get(level);
+    const to = Grid.get(level + 1);
+    const next = new Float64Array(to.n);
+    prolongate(from, to, current, next);
+    current = next;
+  }
+  return current;
 }
 
 /** Steps at which keyframes are captured for a tectonic age and a keyframe count: evenly spaced, the age itself excluded. */
@@ -406,10 +425,28 @@ export function buildHistory(input: PlanetParams, onProgress: Progress = () => {
   const sim = new TectonicsSim(grid, params, rng.fork('tectonics'));
   const wanted = keyframeSteps(params.tectonicAge, options.keyframes ?? 0);
   const snapshots: ReliefState[] = [];
+  // Real precipitation inside the loop (DESIGN 9.1): every IN_LOOP_CLIMATE_INTERVAL steps the
+  // climate runs on a coarse grid and its rain and evaporation drive the fluvial passes until
+  // the next update. The schedule depends only on the parameters, never on the keyframes asked
+  // for, so a keyframe at step t is still the planet of a build of age t.
+  const coarseLevel = Math.max(MIN_LEVEL, level - IN_LOOP_CLIMATE_COARSER);
+  const coarseGrid = Grid.get(coarseLevel);
+  const coarseArea = cellAreasKm2(coarseGrid, params.radiusKm);
+  const coarseHydro = new Hydrology(coarseGrid, coarseArea, params.radiusKm);
+  const updateLoopClimate = (): void => {
+    const elevation = sim.elevation.subarray(0, coarseGrid.n);
+    coarseHydro.applyProxyPrecipitation(elevation, sim.seaLevel);
+    coarseHydro.run(elevation, sim.seaLevel);
+    const climate = computeClimate(coarseGrid, params, elevation, sim.seaLevel, coarseArea, coarseHydro.oceanDistance, coarseHydro.lake);
+    const evaporation = new Float64Array(coarseGrid.n);
+    for (let i = 0; i < coarseGrid.n; i++) evaporation[i] = evaporationRate(climate.temperature.annual[i]);
+    sim.setPrecipitation(liftToLevel(coarseGrid, grid, climate.moisture.annual), liftToLevel(coarseGrid, grid, evaporation));
+  };
   sim.run(
     params.tectonicAge,
     (f) => onProgress('tectonics', 0.05 + 0.6 * f),
     (step) => {
+      if (step % IN_LOOP_CLIMATE_INTERVAL === 0 && step < params.tectonicAge) updateLoopClimate();
       if (wanted.includes(step)) snapshots.push(snapshotSim(sim));
     },
   );

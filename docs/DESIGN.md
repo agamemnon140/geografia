@@ -130,6 +130,16 @@ Mechanisms as built in M5 (`climate/ocean.ts`, `climate/moisture.ts`, `climate/m
 - Moisture is a steady-state column of water vapor per sample: evaporation from open water of 1200 mm per year at 18 degrees C rising 6.5% per degree (Clausius-Clapeyron); first-order upwind transport along the sample's wind plus an eddy diffusivity of 1.5e6 m^2/s standing for the storm tracks; rainout at one over 9 days, faster in cold air, plus the fraction of the column condensed per meter of lift (scale height 2,500 m) where the wind climbs, plus 0.4 s times the wind convergence. Land re-evaporates 60% of its rain (Earth's recycling ratio), folded into the land sink so one linear solve is exact; the discrete fluxes are area-weighted so precipitation equals evaporation over the planet to the solver tolerance. The orographic and convergence shares are stored per cell for the explain mode. Same multilevel solve as the currents.
 - The final rivers use this precipitation, and lake evaporation uses the same open-water formula at the cell's annual temperature.
 
+Mechanisms as built in M9 (`climate/ebm.ts`; replaces the banded temperature link of M4 and the ice albedo pass of M6):
+
+- The annual-mean sea-level temperature is the solution of the two-dimensional energy-balance model of North, Cahalan and Coakley (1981) on the sphere: absorbed sunlight Q (1 - albedo) equals the outgoing longwave A + B T plus the divergence of a diffusive transport D laplacian(T), with B = 2.09 W/m^2 per degree and Earth's A = 203.3 W/m^2 and D = 0.6. Solved coarse to fine like the other fields. The global mean is no longer prescribed: it is the area-weighted mean of the solution.
+- Albedo: ocean 0.26, land 0.34, ice 0.62 (sea ice by its share of the year), clouds included. The climate iterates the balance with the ice extent it produces until no cell's albedo changes by more than 0.01 (up to five rounds), so a snowball or a hothouse is an outcome of insolation, tilt and the parameters below.
+- A carries the forcings: greenhouse strength (20 W/m^2 per e-fold, the logarithmic law of carbon dioxide), pressure broadening (8 W/m^2 per e-fold of surface pressure) and the glacial phase (B times 6 degrees at phase 1). D carries pressure (linearly), rotation (inversely: faster rotation makes smaller eddies) and planet size (per unit angle, inversely with the square of the radius).
+- Eccentricity scales each sample's flux by (1 + e cos M)^2 with perihelion at the January-like sample, so the hemispheres get unequal seasons; a thicker atmosphere also lengthens the land's thermal time constant by the square root of the pressure.
+- Real precipitation inside the tectonic loop: every 25 steps the full climate runs on a grid two levels coarser (level 4 for Earth), and its annual precipitation and open-water evaporation, prolongated to the fine grid, drive the fluvial passes until the next update. The schedule depends only on the parameters, so a timeline keyframe at step t still equals a build of age t.
+
+Calibration status after M9 (Earth preset): global mean 13 to 15 degrees C, equator 29, poles -14 to -19, ice sheets 6 to 11% of the land, permanent sea ice 7% of the ocean (Earth 3%). Sweeping insolation on a young Earth: 0.8 and 0.9 freeze over (mean -50 and -16, sea ice on 100% and 58% of the ocean), 1.0 is temperate, 1.1 is ice-free at 29 degrees, 1.3 bakes at 53. Greenhouse 3x warms by 14 degrees; air at 0.3 bar gives an 86-degree equator-to-pole contrast; eccentricity 0.2 with perihelion in southern summer expands the northern ice sheets (cool northern summers, the Milankovitch logic). Build 4.0 s.
+
 Mechanisms as built in M6 (`climate/ice.ts`, `climate/koppen.ts`):
 
 - Sea ice in every sample whose surface temperature is below -1.8 degrees C; an ice sheet where the warmest sample of a land cell stays below zero, altitude included. One albedo pass cools iced cells by up to 4 degrees and recomputes the extent. Ice sheets lock 2 km of water per cell; the final sea level is solved from the inventory minus that volume, so the water parameter is now ocean plus ice (Earth 1.364e9 km^3) and a cold planet gets a lower coastline by itself. The glacial-phase parameter cools the global mean by 6 degrees at 1, and everything else (ice, sea level, biomes) follows.
@@ -168,6 +178,9 @@ The tectonic loop is step-able and deterministic, so history is a matter of copy
 | tectonic age | steps (50 to 400) | Loop length: more orogenies, more erosion |
 | glacial phase | 0 to 1 | Temperature offset, sea-level drop, ice extent |
 | mantle heat (phase 2) | relative to Earth (0.3 to 3) | Plate speed, hotspot volcanism, rifting rate |
+| greenhouse (phase 2) | relative to Earth (0.2 to 5) | Longwave trapping: global temperature, ice extent |
+| air pressure (phase 2) | bar (0.1 to 10) | Heat transport to the poles, pressure broadening, seasonal inertia |
+| eccentricity (phase 2) | 0 to 0.3 | Unequal seasons between hemispheres |
 
 Presets: Earth, Super-Earth, Slow rotator, High tilt, Waterworld, Dry world, Snowball, Young planet.
 
@@ -256,6 +269,7 @@ The UI exists to expose causality, not to decorate. Every number on screen has a
 | M6 | Ice and Koppen layers, glacial phase, gallery with statistics, explain drawer with itemized components, parameters in the URL for sharing, PNG and JSON export, automatic coarse preview on parameter change |
 | M7 | History slider under the map; keyframes stream in after the final world; every layer, the statistics and the explain drawer work at any step; exports carry the step |
 | M8 | Mantle heat parameter and the Hot mantle preset; plate births and deaths listed under the statistics, counted per step on the timeline |
+| M9 | Greenhouse, air pressure and eccentricity parameters with the Greenhouse, Thin air and Eccentric orbit presets; the explain drawer's temperature line itemizes the energy balance |
 
 ### 8.3 Rules
 

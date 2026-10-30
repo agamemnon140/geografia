@@ -24,8 +24,10 @@ currents, sstAnomaly, plates, crustAge, thickness, cells.
 
 ## The app
 
-- Pick a preset or edit the ten parameters; every edit rebuilds a coarse
-  preview in under two seconds (toggle), Build planet runs the full grid.
+- Pick a preset or edit the parameters (ten physical ones plus mantle heat,
+  greenhouse, air pressure and eccentricity from phase 2); every edit
+  rebuilds a coarse preview in under two seconds (toggle), Build planet runs
+  the full grid.
 - Layers with a month slider for the seasonal ones; click a cell for the
   explain drawer, which itemizes where its elevation, water, temperature and
   biome come from.

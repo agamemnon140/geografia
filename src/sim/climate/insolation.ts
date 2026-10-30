@@ -19,6 +19,23 @@ export function declinations(tiltDeg: number): Float64Array {
 }
 
 /**
+ * Flux factor of each sample for an eccentric orbit, mean 1 over the year:
+ * (1 + e cos(mean anomaly))^2 with perihelion at sample 0 (January-like,
+ * southern summer, as on Earth today), so the hemispheres get unequal
+ * seasons. The mean anomaly stands in for the true anomaly, fine for the
+ * eccentricities allowed.
+ */
+export function orbitalFactors(eccentricity: number): Float64Array {
+  const out = new Float64Array(SAMPLES);
+  const mean = 1 + (eccentricity * eccentricity) / 2;
+  for (let s = 0; s < SAMPLES; s++) {
+    const f = 1 + eccentricity * Math.cos((2 * Math.PI * (s + 0.5)) / SAMPLES);
+    out[s] = (f * f) / mean;
+  }
+  return out;
+}
+
+/**
  * Daily-mean insolation at the top of the atmosphere for a latitude and a
  * declination, W/m^2: the standard integral over the day with the sunrise
  * hour angle h0, handling polar day (h0 = pi) and polar night (zero).
