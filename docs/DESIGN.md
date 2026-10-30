@@ -146,6 +146,8 @@ Revisions in M11, driven by the real Earth (section 3.9):
 - Transport is boosted inside the Hadley cell (times 5 at the equator, fading to the cell's edge), standing for the overturning circulation, with the base transport lowered to 0.45. This flattens the tropics as on Earth; the fit to the zonal sea-level profile has a 2.6-degree root-mean-square error, the mid-latitudes staying about 3 degrees too cold (storm tracks and ocean basins, not in the model). A slow rotator's planet-wide Hadley cell makes it nearly isothermal.
 - Land albedo 0.30 and ocean 0.27 (vegetated land is barely brighter than cloudy seas). The seasonal response scales with the absorbed share of sunlight relative to bare ground, so ice sheets and frozen seas swing far less than tundra, which is what keeps Antarctica's interior frozen in summer.
 - The ice iteration starts cold: the first pass counts as ice anything within 3 degrees of freezing, then lets the feedback melt what cannot sustain itself. Starting bare never formed an ice sheet (hysteresis); Earth is on the icy branch.
+- The lapse rate is measured from the atmosphere's reference height, the area-weighted mean surface (sea surface over the ocean), not from the sea level. On Earth the two differ by a few hundred meters; on a land-heavy planet (the ocean-cover parameter at 0.5 puts the sea almost 3 km below the plateaus) measuring from the sea had turned every continent into Tibet and the planet into a snowball. The sea surface of such a planet sits warm below the reference, as a deep basin should. The area-weighted mean surface temperature equals the balance's mean by construction, so Earth's calibration holds.
+- Ice sheets, a thickness proxy, may lock at most half of the water inventory, so a glaciated land-heavy planet keeps a sea.
 
 Calibration status after M11 on the real relief: surface mean 14.5 degrees C (Earth 14.5), equator 26.9, Amazon 24 degrees and 2,700 mm, New York 13.0 (12.9 observed), Yakutsk region -12 (-9), Antarctic plateau -44 (-50), land precipitation 990 mm (Earth 800 to 900), ice sheets 15% of the land (10%), permanent sea ice 9% of the ocean (3%), Koppen A 15 / B 26 / C 16 / D 17 / E 26% of the land (Earth 19 / 30 / 14 / 25 / 13). The boreal belt is the largest remaining error: 50 to 70 N land runs 5 to 9 degrees too cold (London 1 degree against 11), so tundra replaces taiga and E grows at D's expense; the subtropical deserts are also too cool (Sahara 14 against 26, clear skies and dry surfaces not being in the balance). Build 5 s standalone.
 
@@ -184,6 +186,7 @@ The app ships the real relief so the simulator's later links can be judged on kn
 | radius | km (0.3 to 2.5 x Earth) | Cell count; circulation cell count; plate size |
 | density | relative to Earth | Gravity: isostasy ceiling, lapse rate |
 | water volume | relative to Earth | Sea level from hypsometry |
+| ocean cover | 0 (off) or 0.05 to 0.95 | Sea level solved each step so the ocean covers this share; the water inventory then follows the relief, and ice still takes its part at the end |
 | axial tilt | 0 to 90 degrees | Seasonal insolation amplitude, polar night |
 | rotation period | hours | Coriolis, number of circulation cells, wind deflection |
 | insolation | relative to Earth | Global temperature baseline |

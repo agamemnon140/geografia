@@ -84,23 +84,30 @@ export function computeTemperature(
     absorbed[i] = insolationAnnual[i] * (1 - albedo[i]);
   }
 
-  // Annual mean at sea level from the energy balance.
+  // Annual mean from the energy balance, valid at the atmosphere's reference height: the
+  // area-weighted mean surface (sea surface over the ocean). On Earth that is a few hundred
+  // meters above the sea; on a land-heavy planet whose sea lies kilometers below its plateaus
+  // the lapse rate must not turn every continent into Tibet, and the sea surface sits warm
+  // below the reference. The area-weighted mean surface temperature is the balance's mean.
   const balance = new Float64Array(n);
   solveEnergyBalance(grid, params, absorbed, balance);
   let meanSum = 0;
   let areaSum = 0;
+  let surfaceSum = 0;
   for (let i = 0; i < n; i++) {
     meanSum += grid.area[i] * balance[i];
+    surfaceSum += grid.area[i] * Math.max(elevation[i], seaLevel);
     areaSum += grid.area[i];
   }
   const globalMean = meanSum / areaSum;
+  const referenceHeight = surfaceSum / areaSum;
 
   const tauLand = TAU_LAND * Math.sqrt(params.pressureBar);
   for (let i = 0; i < n; i++) {
     const land = elevation[i] >= seaLevel;
     const c = land ? 1 - Math.exp(-oceanDistance[i] / CONTINENTALITY_SCALE_CELLS) : 0;
     continentality[i] = c;
-    const height = land ? (elevation[i] - seaLevel) / 1000 : 0;
+    const height = (Math.max(elevation[i], seaLevel) - referenceHeight) / 1000;
     balanceTerm[i] = balance[i] - globalMean;
     lapseTerm[i] = -lapse * height;
     continentalTerm[i] = -CONTINENTAL_COOLING * c;

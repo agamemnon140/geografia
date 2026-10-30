@@ -6,6 +6,9 @@ circulation, currents and ice. See [docs/DESIGN.md](docs/DESIGN.md) for the
 agreed scope, the model, each milestone's mechanisms and the calibration
 status against Earth.
 
+Live: https://agamemnon140.github.io/geografia/ (built from `main` by the
+Pages workflow; the first full build takes a few seconds in your browser).
+
 ## Run
 
 ```
@@ -25,9 +28,9 @@ currents, sstAnomaly, plates, crustAge, thickness, cells.
 ## The app
 
 - Pick a preset or edit the parameters (ten physical ones plus mantle heat,
-  greenhouse, air pressure and eccentricity from phase 2); every edit
-  rebuilds a coarse preview in under two seconds (toggle), Build planet runs
-  the full grid.
+  greenhouse, air pressure, eccentricity and a target ocean cover); every
+  edit rebuilds a coarse preview in under two seconds (toggle), Build planet
+  runs the full grid.
 - Layers with a month slider for the seasonal ones; click a cell for the
   explain drawer, which itemizes where its elevation, water, temperature and
   biome come from.

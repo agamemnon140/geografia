@@ -7,7 +7,7 @@ import type { BasinInfo } from './climate/ocean.ts';
 import { MAX_LEVEL, MIN_LEVEL } from './constants.ts';
 import { Grid, cellAreasKm2, levelForRadius } from './grid/grid.ts';
 import { Hydrology, type LakeInfo } from './hydrology/routing.ts';
-import { solveSeaLevel } from './hypsometry.ts';
+import { solveSeaLevel, waterVolumeBelow } from './hypsometry.ts';
 import { validateParams, waterVolumeKm3, type PlanetParams } from './params.ts';
 import { Rng } from './rng/xoshiro.ts';
 import { computeStats, type WorldStats } from './stats.ts';
@@ -260,7 +260,11 @@ export function finalize(ctx: BuildContext, state: ReliefState, onProgress: Prog
 
   // Ice sheets lock water away: the final sea level is solved from what stays liquid (DESIGN 3.5 step 6).
   onProgress('rivers', 0.9);
-  const seaLevel = ctx.seaLevelOverride ?? solveSeaLevel(state.elevation, areaKm2, Math.max(0, waterVolumeKm3(params) - climate.ice.iceVolumeKm3));
+  // The liquid inventory: the water parameter, or, with a target ocean cover, the volume the loop's sea level holds.
+  const inventory = params.oceanFraction > 0 ? waterVolumeBelow(state.elevation, areaKm2, state.seaLevel) : waterVolumeKm3(params);
+  // Ice sheets are a thickness proxy; they cannot lock more than a share of the water that exists.
+  const locked = Math.min(climate.ice.iceVolumeKm3, MAX_ICE_SHARE * inventory);
+  const seaLevel = ctx.seaLevelOverride ?? solveSeaLevel(state.elevation, areaKm2, Math.max(0, inventory - locked));
 
   // Final rivers and lakes from the climate's precipitation and evaporation (DESIGN 3.4).
   hydro.precipitation.set(climate.moisture.annual);
@@ -374,6 +378,9 @@ export function finalize(ctx: BuildContext, state: ReliefState, onProgress: Prog
     stats,
   };
 }
+
+/** Largest share of the water inventory that ice sheets may lock away (Earth's land fully glaciated would hold about a fifth of its ocean). */
+export const MAX_ICE_SHARE = 0.5;
 
 /** Steps between in-loop climate updates that feed real precipitation to the fluvial erosion. */
 export const IN_LOOP_CLIMATE_INTERVAL = 25;

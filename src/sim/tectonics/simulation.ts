@@ -1,7 +1,7 @@
 import { cellAreasKm2, type Grid } from '../grid/grid.ts';
 import { nearestCell } from '../grid/locate.ts';
 import { Hydrology } from '../hydrology/routing.ts';
-import { solveSeaLevel } from '../hypsometry.ts';
+import { solveSeaLevel, solveSeaLevelForFraction } from '../hypsometry.ts';
 import { relativeGravity, waterVolumeKm3, type PlanetParams } from '../params.ts';
 import { Noise3D } from '../rng/noise.ts';
 import type { Rng } from '../rng/xoshiro.ts';
@@ -88,6 +88,8 @@ export class TectonicsSim {
   /** Shared with the pipeline, which runs the final pass on the finished relief. */
   readonly hydrology: Hydrology;
   readonly waterKm3: number;
+  /** Target ocean cover; 0 lets the water volume set the sea level. */
+  readonly targetOceanFraction: number;
   readonly cap: number;
   readonly cellAngle: number;
   /** Mantle heat flux relative to Earth, and the plate speed factor derived from it. */
@@ -138,6 +140,7 @@ export class TectonicsSim {
     this.areaKm2 = cellAreasKm2(grid, params.radiusKm);
     this.hydrology = new Hydrology(grid, this.areaKm2, params.radiusKm);
     this.waterKm3 = waterVolumeKm3(params);
+    this.targetOceanFraction = params.oceanFraction;
     this.cap = thicknessCap(relativeGravity(params));
     this.poleRng = rng.fork('pole-walk');
     this.eventRng = rng.fork('plate-events');
@@ -951,7 +954,10 @@ export class TectonicsSim {
       if (boundary[j] === BOUNDARY_SUBDUCTING) e -= TRENCH_M;
       elevation[j] = e;
     }
-    this.seaLevel = solveSeaLevel(elevation, this.areaKm2, this.waterKm3);
+    // Either the water inventory sets the sea level, or a target ocean cover does and the inventory follows.
+    this.seaLevel = this.targetOceanFraction > 0
+      ? solveSeaLevelForFraction(elevation, this.areaKm2, this.targetOceanFraction)
+      : solveSeaLevel(elevation, this.areaKm2, this.waterKm3);
   }
 
   /** Erosion of land toward the lowest neighbor, diffusion of continental thickness, cap enforcement. */

@@ -72,6 +72,17 @@ describe('build', () => {
     expect(hypsSum).toBeCloseTo(1, 9);
   });
 
+  it('pins the ocean cover when asked, the water volume following', () => {
+    const half = build({ ...QUICK, oceanFraction: 0.5 });
+    const wide = build({ ...QUICK, oceanFraction: 0.85 });
+    // Ice sheets take some water back from the pinned sea at the end (a few percent of the surface).
+    expect(Math.abs(half.stats.oceanFraction - 0.5)).toBeLessThan(0.06);
+    expect(Math.abs(wide.stats.oceanFraction - 0.85)).toBeLessThan(0.06);
+    expect(wide.seaLevel).toBeGreaterThan(half.seaLevel);
+    // A land-heavy planet grows big ice sheets; what they lock lowers its sea by a few hundred meters at most.
+    expect(Math.abs(half.loopSeaLevel - half.seaLevel)).toBeLessThan(500);
+  });
+
   it('raises sea level with more water', () => {
     const wet = build({ ...QUICK, waterVolume: 2 });
     const dry = build({ ...QUICK, waterVolume: 0.5 });

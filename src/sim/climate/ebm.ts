@@ -18,8 +18,15 @@ import { levelsUpTo, prolongate } from './multilevel.ts';
  * rotation and planet size.
  */
 
-/** Outgoing longwave at 0 degrees C with Earth's greenhouse, W/m^2 (North et al. 1981). */
-export const OLR_A = 203.3;
+/**
+ * Outgoing longwave at 0 degrees C with Earth's greenhouse, W/m^2. North et
+ * al. (1981) give 203.3 for a model whose temperature is a zonal mean; here
+ * the balance is per cell with its own albedo and the lapse rate measured
+ * from the mean surface, and 206.5 brings the real Earth's surface mean to
+ * its observed 14.5 degrees C (the ice feedback makes the response steep:
+ * about one degree per W/m^2 here).
+ */
+export const OLR_A = 206.5;
 /** Outgoing longwave slope, W/m^2 per degree C. */
 export const OLR_B = 2.09;
 /**

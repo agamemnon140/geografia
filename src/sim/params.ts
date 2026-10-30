@@ -10,6 +10,8 @@ export interface PlanetParams {
   density: number;
   /** Water inventory relative to Earth, scaled to the planet's surface area. */
   waterVolume: number;
+  /** Target share of the surface under the sea (0.05 to 0.95); 0 lets the water volume set the sea level instead. */
+  oceanFraction: number;
   /** Axial tilt in degrees. */
   axialTiltDeg: number;
   /** Rotation period in hours. */
@@ -52,7 +54,8 @@ export const PARAM_SPECS: ParamSpec[] = [
   { key: 'seed', label: 'Seed', min: 0, max: 4294967295, step: 1, unit: '', wiredIn: 1, help: 'All randomness' },
   { key: 'radiusKm', label: 'Radius', min: 1900, max: 16000, step: 10, unit: 'km', wiredIn: 1, help: 'Cell count; circulation cells; plate size' },
   { key: 'density', label: 'Density', min: 0.3, max: 2, step: 0.05, unit: 'x Earth', wiredIn: 2, help: 'Gravity: isostasy ceiling, lapse rate' },
-  { key: 'waterVolume', label: 'Water volume', min: 0, max: 5, step: 0.05, unit: 'x Earth', wiredIn: 1, help: 'Sea level from hypsometry' },
+  { key: 'waterVolume', label: 'Water volume', min: 0, max: 5, step: 0.05, unit: 'x Earth', wiredIn: 1, help: 'Sea level from hypsometry (ignored when ocean cover is set)' },
+  { key: 'oceanFraction', label: 'Ocean cover', min: 0, max: 0.95, step: 0.01, unit: '0 = by water', wiredIn: 9, help: 'Sea level set each step so the ocean covers this share of the surface; the water volume follows' },
   { key: 'axialTiltDeg', label: 'Axial tilt', min: 0, max: 90, step: 0.5, unit: 'deg', wiredIn: 4, help: 'Seasonal insolation amplitude, polar night' },
   { key: 'rotationHours', label: 'Rotation period', min: 4, max: 5000, step: 1, unit: 'h', wiredIn: 4, help: 'Coriolis, number of circulation cells' },
   { key: 'insolation', label: 'Insolation', min: 0.3, max: 2, step: 0.01, unit: 'x Earth', wiredIn: 4, help: 'Global temperature baseline' },
@@ -70,6 +73,7 @@ export const EARTH: PlanetParams = {
   radiusKm: EARTH_RADIUS_KM,
   density: 1,
   waterVolume: 1,
+  oceanFraction: 0,
   axialTiltDeg: 23.44,
   rotationHours: 23.93,
   insolation: 1,
@@ -94,6 +98,7 @@ export const PRESETS: Preset[] = [
   { name: 'High tilt', params: { ...EARTH, axialTiltDeg: 45 } },
   { name: 'Waterworld', params: { ...EARTH, waterVolume: 2.5 } },
   { name: 'Dry world', params: { ...EARTH, waterVolume: 0.3 } },
+  { name: 'Half ocean', params: { ...EARTH, oceanFraction: 0.5 } },
   { name: 'Snowball', params: { ...EARTH, insolation: 0.85, glacialPhase: 1 } },
   { name: 'Young planet', params: { ...EARTH, tectonicAge: 50 } },
   { name: 'Hot mantle', params: { ...EARTH, mantleHeat: 2.5, tectonicAge: 300 } },
