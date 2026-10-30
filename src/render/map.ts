@@ -1,7 +1,8 @@
 import { ANNUAL } from '../sim/climate/insolation.ts';
 import { Grid } from '../sim/grid/grid.ts';
 import type { World } from '../sim/pipeline.ts';
-import { layerById, paintLayer } from './layers.ts';
+import { layerById } from './layers.ts';
+import { paintEquirect } from './paint.ts';
 import { equirectRaster, latLonToPixel, type Raster } from './raster.ts';
 
 /** Equirectangular map on a canvas with a fixed internal resolution, scaled by CSS. */
@@ -67,7 +68,7 @@ export class MapView {
 
   draw(): void {
     if (!this.world || !this.raster) return;
-    paintLayer(this.world, this.raster, layerById(this.layerId), this.image.data, this.sample);
+    paintEquirect(this.world, layerById(this.layerId), this.width, this.height, this.image.data, this.sample);
     this.ctx.putImageData(this.image, 0, 0);
     if (this.selected >= 0) this.drawMarker(this.selected);
   }

@@ -4,6 +4,8 @@
  * Prints per 10-degree band the land and ocean precipitation, temperature,
  * zonal wind and current, then global moisture and ocean summaries.
  */
+import { readFileSync } from 'node:fs';
+import { EARTH_DATA_PATH, buildEarth, parseEarthElevation } from '../src/sim/earth.ts';
 import { DEG } from '../src/sim/grid/geometry.ts';
 import { Grid } from '../src/sim/grid/grid.ts';
 import { PRESETS } from '../src/sim/params.ts';
@@ -12,19 +14,23 @@ import { ANNUAL } from '../src/sim/climate/insolation.ts';
 import { windAt } from '../src/render/layers.ts';
 
 const [, , presetName = 'Earth', seedArg = '1'] = process.argv;
-const preset = PRESETS.find((p) => p.name.toLowerCase() === presetName.toLowerCase());
+const real = presetName.toLowerCase() === 'real';
+const preset = real ? PRESETS[0] : PRESETS.find((p) => p.name.toLowerCase() === presetName.toLowerCase());
 if (!preset) {
-  console.error(`Unknown preset "${presetName}"`);
+  console.error(`Unknown preset "${presetName}" (use Real for the measured relief)`);
   process.exit(1);
 }
 const t0 = performance.now();
 const stages: string[] = [];
 let last = t0;
-const w = build({ ...preset.params, seed: Number(seedArg) >>> 0 }, (stage) => {
+const log = (stage: string): void => {
   const now = performance.now();
   stages.push(`${stage} +${(now - last).toFixed(0)}ms`);
   last = now;
-});
+};
+const w = real
+  ? buildEarth(parseEarthElevation((() => { const f = readFileSync(`public/${EARTH_DATA_PATH}`); return f.buffer.slice(f.byteOffset, f.byteOffset + f.byteLength) as ArrayBuffer; })()), log)
+  : build({ ...preset.params, seed: Number(seedArg) >>> 0 }, log);
 console.log(`build ${((performance.now() - t0) / 1000).toFixed(2)} s: ${stages.join(', ')}`);
 const grid = Grid.get(w.level);
 

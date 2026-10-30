@@ -29,13 +29,18 @@ export interface IceFields {
   iceVolumeKm3: number;
 }
 
-/** Ice extent from the temperature samples. */
+/**
+ * Ice extent from the temperature samples. `marginC` raises both thresholds;
+ * the climate uses it for its first pass (a cold start), because ice keeps
+ * itself once present and a bare-ground first guess would never let it form.
+ */
 export function classifyIce(
   grid: Grid,
   temperature: TemperatureFields,
   elevation: Float64Array,
   seaLevel: number,
   areaKm2: Float64Array,
+  marginC = 0,
 ): IceFields {
   const n = grid.n;
   const seaIceMonths = new Uint8Array(n);
@@ -47,11 +52,11 @@ export function classifyIce(
     for (let s = 0; s < SAMPLES; s++) {
       const t = temperature.samples[s * n + i];
       if (t > warmest) warmest = t;
-      if (t < SEA_ICE_C) frozen++;
+      if (t < SEA_ICE_C + marginC) frozen++;
     }
     if (elevation[i] < seaLevel) {
       seaIceMonths[i] = frozen;
-    } else if (warmest < ICE_SHEET_C) {
+    } else if (warmest < ICE_SHEET_C + marginC) {
       iceSheet[i] = 1;
       volume += areaKm2[i] * ICE_SHEET_THICKNESS_KM;
     }

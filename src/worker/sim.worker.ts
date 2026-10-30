@@ -1,3 +1,4 @@
+import { buildEarth, parseEarthElevation } from '../sim/earth.ts';
 import { buildHistory, compactWorld, finalize, worldBuffers } from '../sim/pipeline.ts';
 import type { WorkerRequest, WorkerResponse } from './protocol.ts';
 
@@ -10,12 +11,18 @@ const scope = self as unknown as WorkerScope;
 
 scope.onmessage = (event) => {
   const request = event.data;
-  if (request.type !== 'build') return;
   const started = performance.now();
+  const progress = (stage: string, fraction: number): void => {
+    scope.postMessage({ type: 'progress', id: request.id, stage, fraction });
+  };
   try {
-    const history = buildHistory(request.params, (stage, fraction) => {
-      scope.postMessage({ type: 'progress', id: request.id, stage, fraction });
-    }, request.options ?? {});
+    if (request.type === 'earth') {
+      const world = buildEarth(parseEarthElevation(request.elevation), progress);
+      scope.postMessage({ type: 'done', id: request.id, world, elapsedMs: performance.now() - started }, worldBuffers(world));
+      scope.postMessage({ type: 'history', id: request.id, elapsedMs: 0 });
+      return;
+    }
+    const history = buildHistory(request.params, progress, request.options ?? {});
     scope.postMessage(
       { type: 'done', id: request.id, world: history.world, elapsedMs: performance.now() - started },
       worldBuffers(history.world),

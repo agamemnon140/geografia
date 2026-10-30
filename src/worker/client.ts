@@ -46,6 +46,16 @@ export class SimClient {
     });
   }
 
+  /** The real Earth from the shipped elevation bytes (transferred to the worker). */
+  buildEarth(elevation: ArrayBuffer, callbacks: BuildCallbacks = {}): Promise<BuildResult> {
+    const id = this.nextId++;
+    return new Promise((resolve, reject) => {
+      this.pending.set(id, { ...callbacks, resolve, reject, done: false });
+      const request: WorkerRequest = { type: 'earth', id, elevation };
+      this.worker.postMessage(request, [elevation]);
+    });
+  }
+
   private handle(msg: WorkerResponse): void {
     const p = this.pending.get(msg.id);
     if (!p) return;

@@ -42,6 +42,8 @@ export interface World {
   level: number;
   /** True when built below the planet's own level. */
   preview: boolean;
+  /** Name of the measured relief this world was built on (the real Earth), or null for a simulated planet. */
+  reference: string | null;
   n: number;
   radiusKm: number;
   /** Tectonic step this world shows; equals the tectonic age for a finished planet. */
@@ -239,6 +241,8 @@ export interface BuildContext {
   preview: boolean;
   areaKm2: Float64Array;
   hydro: Hydrology;
+  /** Use this sea level instead of solving it from the water inventory (the real Earth's datum is zero). */
+  seaLevelOverride?: number;
 }
 
 /** Hydrology, climate, ice, biomes and statistics on a relief state (everything after the tectonic loop). */
@@ -256,7 +260,7 @@ export function finalize(ctx: BuildContext, state: ReliefState, onProgress: Prog
 
   // Ice sheets lock water away: the final sea level is solved from what stays liquid (DESIGN 3.5 step 6).
   onProgress('rivers', 0.9);
-  const seaLevel = solveSeaLevel(state.elevation, areaKm2, Math.max(0, waterVolumeKm3(params) - climate.ice.iceVolumeKm3));
+  const seaLevel = ctx.seaLevelOverride ?? solveSeaLevel(state.elevation, areaKm2, Math.max(0, waterVolumeKm3(params) - climate.ice.iceVolumeKm3));
 
   // Final rivers and lakes from the climate's precipitation and evaporation (DESIGN 3.4).
   hydro.precipitation.set(climate.moisture.annual);
@@ -311,6 +315,7 @@ export function finalize(ctx: BuildContext, state: ReliefState, onProgress: Prog
     params,
     level: ctx.level,
     preview: ctx.preview,
+    reference: null,
     n,
     radiusKm: params.radiusKm,
     steps: state.step,

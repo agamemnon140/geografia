@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { globeRaster, projectToGlobe, viewRotation } from '../src/render/globe.ts';
 import { LAYERS, cellColors, paintCells } from '../src/render/layers.ts';
+import { PixelSampler, paintEquirect } from '../src/render/paint.ts';
+import { equirectRaster } from '../src/render/raster.ts';
 import { fromLatLon, DEG } from '../src/sim/grid/geometry.ts';
 import { Grid } from '../src/sim/grid/grid.ts';
 import { nearestCell } from '../src/sim/grid/locate.ts';
@@ -50,6 +52,53 @@ describe('globe projection', () => {
     expect((at as [number, number])[1]).toBeLessThan(200);
     const east = projectToGlobe(grid, nearestCell(grid, ...fromLatLon(0, 30 * DEG)), 400, 0, 0);
     expect((east as [number, number])[0]).toBeGreaterThan(200);
+  });
+});
+
+describe('interpolation', () => {
+  const grid = Grid.get(5);
+  const raster = equirectRaster(grid, 240, 120);
+
+  it('gives every pixel three valid cells with weights that sum to one', () => {
+    for (let p = 0; p < raster.width * raster.height; p++) {
+      const sum = raster.weight[3 * p] + raster.weight[3 * p + 1] + raster.weight[3 * p + 2];
+      expect(sum).toBeCloseTo(1, 5);
+      for (let k = 0; k < 3; k++) {
+        expect(raster.weight[3 * p + k]).toBeGreaterThanOrEqual(0);
+        expect(raster.tri[3 * p + k]).toBeGreaterThanOrEqual(0);
+        expect(raster.tri[3 * p + k]).toBeLessThan(grid.n);
+      }
+      expect(raster.tri[3 * p]).toBe(raster.cell[p]);
+    }
+  });
+
+  it('reproduces a field that is linear in position', () => {
+    // sin(latitude) is the z coordinate: linear in the cell position, so the interpolation of
+    // the per-cell values must match the pixel's own latitude closely.
+    const field = new Float64Array(grid.n);
+    for (let i = 0; i < grid.n; i++) field[i] = grid.xyz[3 * i + 2];
+    const px = new PixelSampler();
+    let worst = 0;
+    for (let r = 0; r < raster.height; r++) {
+      const lat = Math.PI / 2 - ((r + 0.5) / raster.height) * Math.PI;
+      for (let c = 0; c < raster.width; c += 7) {
+        px.set(raster, r * raster.width + c);
+        worst = Math.max(worst, Math.abs(px.interp(field) - Math.sin(lat)));
+      }
+    }
+    expect(worst).toBeLessThan(0.01);
+  });
+
+  it('paints smoothly with hillshade and rivers without leaving the color range', () => {
+    const world = build({ ...EARTH, tectonicAge: 50 }, () => {}, { coarser: 1 });
+    const out = new Uint8ClampedArray(240 * 120 * 4);
+    paintEquirect(world, LAYERS[0], 240, 120, out);
+    let dark = 0;
+    for (let p = 0; p < 240 * 120; p++) {
+      expect(out[p * 4 + 3]).toBe(255);
+      if (out[p * 4] + out[p * 4 + 1] + out[p * 4 + 2] < 30) dark++;
+    }
+    expect(dark).toBeLessThan(240 * 120 * 0.2);
   });
 });
 

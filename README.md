@@ -44,6 +44,14 @@ currents, sstAnomaly, plates, crustAge, thickness, cells.
   inspect; software-rendered, no WebGL) and Compare (A follows the history
   slider, B is any keyframe or any gallery planet, with the statistics in
   two columns). A legend sits under the layer selector.
+- Real Earth builds the measured relief (NOAA ETOPO5 at half a degree,
+  shipped in `public/data/`) with the simulator's own rivers, climate and
+  biomes, so the links can be judged against the planet we know; it joins
+  the gallery and the Compare view. On the command line use `Real` as the
+  preset name.
+- Maps and globes interpolate fields across cells (smooth coastlines),
+  hillshade the relief and draw rivers as lines whose width grows with
+  discharge.
 
 ## Layout
 

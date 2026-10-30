@@ -4,8 +4,8 @@
  * Uses the same raster and painter as the Globe view in the app.
  */
 import { writeFileSync } from 'node:fs';
-import { globeRaster } from '../src/render/globe.ts';
-import { cellColors, layerById, paintCells } from '../src/render/layers.ts';
+import { globeRaster, paintGlobe } from '../src/render/globe.ts';
+import { layerById } from '../src/render/layers.ts';
 import { ANNUAL } from '../src/sim/climate/insolation.ts';
 import { Grid } from '../src/sim/grid/grid.ts';
 import { PRESETS } from '../src/sim/params.ts';
@@ -23,9 +23,9 @@ const size = Number(sizeArg);
 const sample = sampleArg !== undefined ? Number(sampleArg) : ANNUAL;
 const world = build(params);
 const t0 = performance.now();
-const raster = globeRaster(Grid.get(world.level), size, Number(lonArg), Number(latArg));
+globeRaster(Grid.get(world.level), size, Number(lonArg), Number(latArg));
 const t1 = performance.now();
 const rgba = new Uint8ClampedArray(size * size * 4);
-paintCells(cellColors(world, layerById(layerId), sample), raster.cell, rgba, raster.shade);
+paintGlobe(world, layerById(layerId), size, Number(lonArg), Number(latArg), rgba, sample);
 writeFileSync(outPath, encodePng(size, size, rgba));
 console.log(JSON.stringify({ out: outPath, size, rasterMs: Math.round(t1 - t0), paintMs: Math.round(performance.now() - t1) }));

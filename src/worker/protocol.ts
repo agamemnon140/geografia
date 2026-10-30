@@ -1,7 +1,10 @@
 import type { PlanetParams } from '../sim/params.ts';
 import type { BuildOptions, World } from '../sim/pipeline.ts';
 
-export type WorkerRequest = { type: 'build'; id: number; params: PlanetParams; options?: BuildOptions };
+export type WorkerRequest =
+  | { type: 'build'; id: number; params: PlanetParams; options?: BuildOptions }
+  /** The real Earth from the shipped elevation file (its bytes, transferred). */
+  | { type: 'earth'; id: number; elevation: ArrayBuffer };
 
 /**
  * A build answers with progress messages, then `done` with the final world,

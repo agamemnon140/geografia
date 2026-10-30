@@ -12,6 +12,14 @@ import { computeTemperature, type TemperatureFields } from './temperature.ts';
 export const ALBEDO_ITERATIONS = 5;
 /** Stop iterating when no cell's albedo changes by more than this. */
 export const ALBEDO_TOLERANCE = 0.01;
+/**
+ * Cold start: the first pass, computed over bare ground, counts as ice
+ * anything within this many degrees of freezing. Ice reflects its own
+ * summer sun, so the next passes keep it where it can sustain itself and
+ * melt it where it cannot; starting bare would never let an ice sheet form
+ * (hysteresis), and Earth sits on the icy branch.
+ */
+export const ICE_BOOTSTRAP_MARGIN_C = 3;
 
 /** Everything the climate stage produces (DESIGN 3.5 steps 1 to 6; Koppen is classified by the pipeline once the rivers are final). */
 export interface Climate {
@@ -55,7 +63,7 @@ export function computeClimate(
   const nextAlbedo = new Float64Array(n);
   surfaceAlbedo(grid, elevation, seaLevel, null, albedo);
   let temperature = computeTemperature(grid, params, decl, elevation, seaLevel, oceanDistance, albedo);
-  let ice = classifyIce(grid, temperature, elevation, seaLevel, areaKm2);
+  let ice = classifyIce(grid, temperature, elevation, seaLevel, areaKm2, ICE_BOOTSTRAP_MARGIN_C);
   let rounds = 1;
   for (; rounds < ALBEDO_ITERATIONS; rounds++) {
     surfaceAlbedo(grid, elevation, seaLevel, ice, nextAlbedo);

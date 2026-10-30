@@ -8,6 +8,7 @@ import {
   BOUNDARY_TRANSFORM,
 } from '../sim/tectonics/simulation.ts';
 import { cellDebugColor, hypsometric, mix, ramp, type RGB, type Stop } from './colors.ts';
+import type { PixelSampler } from './paint.ts';
 import type { Raster } from './raster.ts';
 
 /** What a layer's colors mean, for the legend (DESIGN 8.4). */
@@ -17,9 +18,11 @@ export type Legend =
   | { kind: 'text'; items: string[] };
 
 /**
- * A map layer: a color per cell. Painting to pixels goes through a raster
- * lookup (equirectangular map or orthographic globe). Seasonal layers take
- * a sample index (0 to 11) or ANNUAL.
+ * A map layer. `cellColor` is the flat color of a cell (thumbnails, tests,
+ * fallback); `smooth` colors a pixel from interpolated fields (DESIGN 8.5)
+ * and is what the map and the globe use. `relief` asks for a hillshade,
+ * `rivers` for the drainage network drawn as lines. Seasonal layers take a
+ * sample index (0 to 11) or ANNUAL.
  */
 export interface Layer {
   id: string;
@@ -27,7 +30,10 @@ export interface Layer {
   /** True when the layer changes with the sample (month) selector. */
   seasonal?: boolean;
   legend?: Legend;
+  relief?: boolean | 'light';
+  rivers?: boolean;
   cellColor(world: World, cell: number, sample: number): RGB;
+  smooth?(world: World, px: PixelSampler, sample: number): RGB;
 }
 
 /** Pixels whose raster entry is -1 (outside the globe) get this. */
@@ -61,11 +67,27 @@ export function windAt(world: World, cell: number, sample: number): [number, num
   return [u / ANNUAL, v / ANNUAL];
 }
 
-/** Wind direction as a hue (blowing east = red, north = yellow-green, west = cyan, south = violet), speed as brightness. */
-function windColor(u: number, v: number, dim: number): RGB {
+/** Interpolated wind at a pixel; ANNUAL averages the samples. */
+function windSmooth(world: World, px: PixelSampler, sample: number): [number, number] {
+  if (sample < ANNUAL) {
+    const base = sample * world.n;
+    return [px.interp(world.windU.subarray(base, base + world.n)), px.interp(world.windV.subarray(base, base + world.n))];
+  }
+  let u = 0;
+  let v = 0;
+  for (let s = 0; s < SAMPLES; s++) {
+    const base = s * world.n;
+    u += px.interp(world.windU.subarray(base, base + world.n));
+    v += px.interp(world.windV.subarray(base, base + world.n));
+  }
+  return [u / SAMPLES, v / SAMPLES];
+}
+
+/** Flow direction as a hue (toward east = red, north = yellow-green, west = cyan, south = violet), speed as brightness. */
+function directionColor(u: number, v: number, fullSpeed: number, dim: number): RGB {
   const speed = Math.hypot(u, v);
   const hue = ((Math.atan2(v, u) + 2 * Math.PI) % (2 * Math.PI)) / (2 * Math.PI);
-  const value = Math.min(1, 0.25 + speed / 10) * dim;
+  const value = Math.min(1, 0.25 + speed / fullSpeed) * dim;
   return hsvColor(hue, 0.85, value);
 }
 
@@ -156,12 +178,14 @@ export function precipitationAt(world: World, cell: number, sample: number): num
 }
 
 const LAKE_COLOR: RGB = [40, 120, 210];
-const RIVER_COLOR: RGB = [20, 70, 190];
+export const RIVER_COLOR: RGB = [20, 70, 190];
 const LAND_WASH: RGB = [240, 236, 226];
 /** Discharge at which a river starts to show, km^3 per year (a basin of roughly ten cells). */
-const RIVER_MIN_KM3 = 40;
-/** Discharge drawn at full strength. */
+export const RIVER_MIN_KM3 = 40;
+/** Discharge drawn at full strength in the flat cell painter. */
 const RIVER_FULL_KM3 = 4000;
+/** Interpolated lake depth above which a pixel is lake water, meters. */
+const LAKE_DEPTH_M = 0.5;
 
 function plateColor(plate: number): RGB {
   return cellDebugColor(plate * 17 + 3);
@@ -184,12 +208,24 @@ const DIRECTION_LEGEND = [
   'red east, yellow-green north, cyan west, violet south',
 ];
 
+/** Interpolated elevation relative to the sea at a pixel. */
+function relief(world: World, px: PixelSampler): number {
+  return px.interp(world.elevation) - world.seaLevel;
+}
+
+function dim(c: RGB, k: number): RGB {
+  return [c[0] * k, c[1] * k, c[2] * k];
+}
+
 export const LAYERS: Layer[] = [
   {
     id: 'elevation',
     name: 'Elevation',
     legend: { kind: 'ramp', stops: ELEVATION_LEGEND, unit: 'm above sea level' },
+    relief: true,
+    rivers: true,
     cellColor: (world, i) => hypsometric(world.elevation[i] - world.seaLevel),
+    smooth: (world, px) => hypsometric(relief(world, px)),
   },
   {
     id: 'koppen',
@@ -204,9 +240,15 @@ export const LAYERS: Layer[] = [
         { color: KOPPEN_COLORS[29], label: 'E polar (ET tundra, EF ice cap)' },
       ],
     },
+    relief: 'light',
     cellColor: (world, i) => {
       if (world.elevation[i] < world.seaLevel) return hypsometric(world.elevation[i] - world.seaLevel);
       return KOPPEN_COLORS[world.koppen[i]] ?? [0, 0, 0];
+    },
+    smooth: (world, px) => {
+      const rel = relief(world, px);
+      if (rel < 0) return hypsometric(rel);
+      return KOPPEN_COLORS[world.koppen[px.cell]] ?? [0, 0, 0];
     },
   },
   {
@@ -220,12 +262,20 @@ export const LAYERS: Layer[] = [
         { color: mix([36, 86, 160], SEA_ICE, 0.5), label: 'seasonal sea ice (paler with more months)' },
       ],
     },
+    relief: 'light',
     cellColor: (world, i) => {
       const rel = world.elevation[i] - world.seaLevel;
       if (rel >= 0) return world.iceSheet[i] ? ICE_SHEET : mix(hypsometric(rel), LAND_WASH, 0.3);
       const months = world.seaIceMonths[i];
       if (months === 0) return hypsometric(rel);
       return mix(hypsometric(rel), SEA_ICE, 0.35 + 0.65 * (months / SAMPLES));
+    },
+    smooth: (world, px) => {
+      const rel = relief(world, px);
+      if (rel >= 0) return world.iceSheet[px.cell] ? ICE_SHEET : mix(hypsometric(rel), LAND_WASH, 0.3);
+      const months = px.interp(world.seaIceMonths);
+      if (months < 0.25) return hypsometric(rel);
+      return mix(hypsometric(rel), SEA_ICE, 0.35 + 0.65 * Math.min(1, months / SAMPLES));
     },
   },
   {
@@ -235,10 +285,11 @@ export const LAYERS: Layer[] = [
       kind: 'categories',
       items: [
         { color: LAKE_COLOR, label: 'lake' },
-        { color: mix(LAND_WASH, RIVER_COLOR, 0.4), label: `river from ${RIVER_MIN_KM3} km³/yr` },
-        { color: RIVER_COLOR, label: `river at ${RIVER_FULL_KM3} km³/yr and above` },
+        { color: RIVER_COLOR, label: `river, from ${RIVER_MIN_KM3} km³/yr; wider with discharge` },
       ],
     },
+    relief: 'light',
+    rivers: true,
     cellColor: (world, i) => {
       const rel = world.elevation[i] - world.seaLevel;
       if (rel < 0) return hypsometric(rel);
@@ -248,6 +299,12 @@ export const LAYERS: Layer[] = [
       if (q < RIVER_MIN_KM3) return land;
       const t = Math.min(1, Math.log(q / RIVER_MIN_KM3) / Math.log(RIVER_FULL_KM3 / RIVER_MIN_KM3));
       return mix(land, RIVER_COLOR, 0.4 + 0.6 * t);
+    },
+    smooth: (world, px) => {
+      const rel = relief(world, px);
+      if (rel < 0) return hypsometric(rel);
+      if (px.interp(world.waterLevel) - px.interp(world.elevation) > LAKE_DEPTH_M) return LAKE_COLOR;
+      return mix(hypsometric(rel), LAND_WASH, 0.45);
     },
   },
   {
@@ -260,6 +317,10 @@ export const LAYERS: Layer[] = [
       if (world.elevation[i] >= world.seaLevel) return c;
       return [c[0] * 0.75, c[1] * 0.75, c[2] * 0.8];
     },
+    smooth: (world, px, sample) => {
+      const c = ramp(TEMPERATURE_RAMP, px.interpSeasonal(world.temperature, world.temperatureAnnual, world.n, sample));
+      return relief(world, px) >= 0 ? c : [c[0] * 0.75, c[1] * 0.75, c[2] * 0.8];
+    },
   },
   {
     id: 'wind',
@@ -268,7 +329,11 @@ export const LAYERS: Layer[] = [
     legend: { kind: 'text', items: DIRECTION_LEGEND.concat('brightness: speed, full at 10 m/s') },
     cellColor: (world, i, sample) => {
       const [u, v] = windAt(world, i, sample);
-      return windColor(u, v, world.elevation[i] >= world.seaLevel ? 1 : 0.7);
+      return directionColor(u, v, 10, world.elevation[i] >= world.seaLevel ? 1 : 0.7);
+    },
+    smooth: (world, px, sample) => {
+      const [u, v] = windSmooth(world, px, sample);
+      return directionColor(u, v, 10, relief(world, px) >= 0 ? 1 : 0.7);
     },
   },
   {
@@ -281,6 +346,10 @@ export const LAYERS: Layer[] = [
       if (world.elevation[i] >= world.seaLevel) return c;
       return [c[0] * 0.55, c[1] * 0.55, c[2] * 0.6];
     },
+    smooth: (world, px, sample) => {
+      const c = ramp(PRECIPITATION_RAMP, px.interpSeasonal(world.precipitationSamples, world.precipitation, world.n, sample));
+      return relief(world, px) >= 0 ? c : [c[0] * 0.55, c[1] * 0.55, c[2] * 0.6];
+    },
   },
   {
     id: 'currents',
@@ -288,11 +357,11 @@ export const LAYERS: Layer[] = [
     legend: { kind: 'text', items: DIRECTION_LEGEND.concat('brightness: speed, full at 0.5 m/s') },
     cellColor: (world, i) => {
       if (world.basin[i] < 0) return [70, 70, 70];
-      const u = world.currentU[i];
-      const v = world.currentV[i];
-      const speed = Math.hypot(u, v);
-      const hue = ((Math.atan2(v, u) + 2 * Math.PI) % (2 * Math.PI)) / (2 * Math.PI);
-      return hsvColor(hue, 0.85, Math.min(1, 0.2 + speed / 0.6));
+      return directionColor(world.currentU[i], world.currentV[i], 0.5, 1);
+    },
+    smooth: (world, px) => {
+      if (relief(world, px) >= 0) return [70, 70, 70];
+      return directionColor(px.interp(world.currentU), px.interp(world.currentV), 0.5, 1);
     },
   },
   {
@@ -301,8 +370,11 @@ export const LAYERS: Layer[] = [
     legend: { kind: 'ramp', stops: ANOMALY_RAMP, unit: '°C carried by currents' },
     cellColor: (world, i) => {
       const c = ramp(ANOMALY_RAMP, world.sstAnomaly[i]);
-      if (world.basin[i] >= 0) return c;
-      return [c[0] * 0.6, c[1] * 0.6, c[2] * 0.6];
+      return world.basin[i] >= 0 ? c : dim(c, 0.6);
+    },
+    smooth: (world, px) => {
+      const c = ramp(ANOMALY_RAMP, px.interp(world.sstAnomaly));
+      return relief(world, px) < 0 ? c : dim(c, 0.6);
     },
   },
   {
@@ -321,10 +393,12 @@ export const LAYERS: Layer[] = [
     cellColor: (world, i) => {
       const b = world.boundary[i];
       if (b !== 0) return BOUNDARY_COLORS[b];
-      const [r, g, bl] = plateColor(world.plate[i]);
-      const land = world.elevation[i] >= world.seaLevel;
-      const k = land ? 1 : 0.55;
-      return [r * k, g * k, bl * k];
+      return dim(plateColor(world.plate[i]), world.elevation[i] >= world.seaLevel ? 1 : 0.55);
+    },
+    smooth: (world, px) => {
+      const b = world.boundary[px.cell];
+      if (b !== 0) return BOUNDARY_COLORS[b];
+      return dim(plateColor(world.plate[px.cell]), relief(world, px) >= 0 ? 1 : 0.55);
     },
   },
   {
@@ -332,12 +406,14 @@ export const LAYERS: Layer[] = [
     name: 'Crust age (oceanic)',
     legend: { kind: 'ramp', stops: AGE_RAMP, unit: 'steps since the sea floor formed (continents gray)' },
     cellColor: (world, i) => (world.crustType[i] === 1 ? [110, 110, 110] : ramp(AGE_RAMP, world.crustAge[i])),
+    smooth: (world, px) => (world.crustType[px.cell] === 1 ? [110, 110, 110] : ramp(AGE_RAMP, px.interp(world.crustAge))),
   },
   {
     id: 'thickness',
     name: 'Crust thickness',
     legend: { kind: 'ramp', stops: THICKNESS_RAMP, unit: 'km' },
     cellColor: (world, i) => ramp(THICKNESS_RAMP, world.thickness[i]),
+    smooth: (world, px) => ramp(THICKNESS_RAMP, px.interp(world.thickness)),
   },
   {
     id: 'cells',
@@ -350,7 +426,7 @@ export function layerById(id: string): Layer {
   return LAYERS.find((l) => l.id === id) ?? LAYERS[0];
 }
 
-/** The layer's color of every cell, 3 bytes per cell. */
+/** The layer's flat color of every cell, 3 bytes per cell. */
 export function cellColors(world: World, layer: Layer, sample = ANNUAL): Uint8ClampedArray {
   const n = world.n;
   const colors = new Uint8ClampedArray(n * 3);
@@ -366,7 +442,7 @@ export function cellColors(world: World, layer: Layer, sample = ANNUAL): Uint8Cl
 /**
  * Fill an RGBA buffer from per-cell colors and a pixel-to-cell lookup; -1
  * entries get the background, and an optional shade (0 to 1) darkens each
- * pixel, which is how the globe gets its lighting.
+ * pixel. This is the flat painter: thumbnails and the globe while it turns.
  */
 export function paintCells(colors: Uint8ClampedArray, cells: Int32Array, out: Uint8ClampedArray, shade: Float32Array | null = null): void {
   for (let p = 0; p < cells.length; p++) {
@@ -388,7 +464,7 @@ export function paintCells(colors: Uint8ClampedArray, cells: Int32Array, out: Ui
   }
 }
 
-/** Fill an RGBA buffer (4 bytes per pixel, raster-sized) with the layer's colors. */
+/** Flat paint of a layer through a raster (one color per cell). */
 export function paintLayer(world: World, raster: Raster, layer: Layer, out: Uint8ClampedArray, sample = ANNUAL): void {
   paintCells(cellColors(world, layer, sample), raster.cell, out);
 }

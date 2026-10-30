@@ -4,8 +4,10 @@
  * `sample` is a month index 0 to 11 for seasonal layers; omitted means annual.
  * Runs on Node's built-in TypeScript type stripping; imports only pure modules.
  */
-import { writeFileSync } from 'node:fs';
-import { layerById, paintLayer } from '../src/render/layers.ts';
+import { readFileSync, writeFileSync } from 'node:fs';
+import { layerById } from '../src/render/layers.ts';
+import { EARTH_DATA_PATH, buildEarth, parseEarthElevation } from '../src/sim/earth.ts';
+import { paintEquirect } from '../src/render/paint.ts';
 import { equirectRaster } from '../src/render/raster.ts';
 import { ANNUAL } from '../src/sim/climate/insolation.ts';
 import { Grid } from '../src/sim/grid/grid.ts';
@@ -15,9 +17,10 @@ import { encodePng } from './png.ts';
 
 const [, , outPath = 'planet.png', presetName = 'Earth', seedArg, layerId = 'elevation', widthArg, sampleArg] = process.argv;
 const sample = sampleArg !== undefined ? Number(sampleArg) : ANNUAL;
-const preset = PRESETS.find((p) => p.name.toLowerCase() === presetName.toLowerCase());
+const real = presetName.toLowerCase() === 'real';
+const preset = real ? PRESETS[0] : PRESETS.find((p) => p.name.toLowerCase() === presetName.toLowerCase());
 if (!preset) {
-  console.error(`Unknown preset "${presetName}". Known: ${PRESETS.map((p) => p.name).join(', ')}`);
+  console.error(`Unknown preset "${presetName}". Known: Real (measured relief), ${PRESETS.map((p) => p.name).join(', ')}`);
   process.exit(1);
 }
 const params = { ...preset.params, seed: seedArg !== undefined ? Number(seedArg) >>> 0 : preset.params.seed };
@@ -25,17 +28,23 @@ const width = widthArg ? Number(widthArg) : 1440;
 const height = width / 2;
 
 const t0 = performance.now();
-const world = build(params, (stage, fraction) => console.error(`${stage.padEnd(10)} ${(fraction * 100).toFixed(0).padStart(3)}%`));
+const log = (stage: string, fraction: number): void => console.error(`${stage.padEnd(10)} ${(fraction * 100).toFixed(0).padStart(3)}%`);
+const world = real ? buildEarth(parseEarthElevation(readEarthFile()), log) : build(params, log);
 const t1 = performance.now();
-const raster = equirectRaster(Grid.get(world.level), width, height);
+equirectRaster(Grid.get(world.level), width, height);
 const t2 = performance.now();
 const rgba = new Uint8ClampedArray(width * height * 4);
-paintLayer(world, raster, layerById(layerId), rgba, sample);
+paintEquirect(world, layerById(layerId), width, height, rgba, sample);
 writeFileSync(outPath, encodePng(width, height, rgba));
 const t3 = performance.now();
 
+function readEarthFile(): ArrayBuffer {
+  const file = readFileSync(`public/${EARTH_DATA_PATH}`);
+  return file.buffer.slice(file.byteOffset, file.byteOffset + file.byteLength) as ArrayBuffer;
+}
+
 console.log(JSON.stringify({
-  preset: preset.name,
+  preset: real ? 'Real Earth' : preset.name,
   seed: params.seed,
   level: world.level,
   cells: world.n,

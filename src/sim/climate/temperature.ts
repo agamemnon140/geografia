@@ -1,6 +1,6 @@
 import type { Grid } from '../grid/grid.ts';
 import { relativeGravity, type PlanetParams } from '../params.ts';
-import { solveEnergyBalance } from './ebm.ts';
+import { ALBEDO_LAND, ALBEDO_OCEAN, solveEnergyBalance } from './ebm.ts';
 import { SAMPLES, SOLAR_CONSTANT, dailyMeanInsolation, orbitalFactors } from './insolation.ts';
 
 /**
@@ -110,7 +110,11 @@ export function computeTemperature(
     // so the periodic steady state is reached; the time constant blends land and ocean.
     const tau = TAU_OCEAN + (tauLand - TAU_OCEAN) * c;
     const alpha = 1 - Math.exp(-1 / tau);
-    const k = K_SEASON_OCEAN + (K_SEASON_LAND - K_SEASON_OCEAN) * c;
+    // A bright surface reflects the summer sun: the seasonal response scales with what it absorbs,
+    // relative to bare ground or open water. Ice sheets and frozen seas swing far less than tundra.
+    const bare = land ? ALBEDO_LAND : ALBEDO_OCEAN;
+    const absorbedShare = (1 - albedo[i]) / (1 - bare);
+    const k = (K_SEASON_OCEAN + (K_SEASON_LAND - K_SEASON_OCEAN) * c) * absorbedShare;
     const qAnnual = insolationAnnual[i];
     let filtered = qAnnual;
     for (let cycle = 0; cycle < 3; cycle++) {

@@ -4,20 +4,22 @@ import { nearestCell } from '../sim/grid/locate.ts';
 import { ANNUAL } from '../sim/climate/insolation.ts';
 import type { World } from '../sim/pipeline.ts';
 import { apply, applyTranspose, axisAngle, multiply, type Mat3 } from '../sim/tectonics/rotation.ts';
-import { cellColors, layerById, paintCells } from './layers.ts';
+import { locateTriangle } from './interp.ts';
+import { cellColors, layerById, paintCells, type Layer } from './layers.ts';
+import { paintSmooth } from './paint.ts';
+import type { Raster } from './raster.ts';
 
 /**
  * Orthographic globe (DESIGN 8.4), software-rendered on a 2D canvas so the
  * app stays dependency-free: every pixel inside the disc is unprojected to
  * the sphere, rotated into the planet's frame and looked up with the same
- * nearest-cell walk the flat map uses. The lookup is cached per view
- * direction; recoloring a layer only repaints.
+ * nearest-cell walk and triangle interpolation the flat map uses. The
+ * lookup is cached per view direction; while the globe turns it is painted
+ * flat, and at rest with the smooth painter (interpolation, hillshade,
+ * rivers).
  */
 
-export interface GlobeRaster {
-  size: number;
-  /** Cell under each pixel, -1 outside the disc. */
-  cell: Int32Array;
+export interface GlobeRaster extends Raster {
   /** Lighting factor per pixel, 0 to 1. */
   shade: Float32Array;
 }
@@ -44,18 +46,23 @@ export function viewRotation(lonDeg: number, latDeg: number): Mat3 {
 
 const cache = new Map<string, GlobeRaster>();
 
-/** Pixel-to-cell lookup and lighting of the disc for a view; cached per grid level, size and view (rounded to half a degree). */
+/** Pixel-to-mesh lookup and lighting of the disc for a view; cached per grid level, size and view (rounded to half a degree). */
 export function globeRaster(grid: Grid, size: number, lonDeg: number, latDeg: number): GlobeRaster {
   const lon = Math.round(lonDeg * 2) / 2;
   const lat = Math.round(latDeg * 2) / 2;
   const key = `${grid.level}:${size}:${lon}:${lat}`;
   const hit = cache.get(key);
   if (hit) return hit;
-  if (cache.size > 64) cache.clear();
+  if (cache.size > 48) cache.clear();
   const rotation = viewRotation(lon, lat);
-  const cell = new Int32Array(size * size).fill(-1);
-  const shade = new Float32Array(size * size);
+  const count = size * size;
+  const cell = new Int32Array(count).fill(-1);
+  const tri = new Int32Array(count * 3);
+  const weight = new Float32Array(count * 3);
+  const shade = new Float32Array(count);
   const tmp = new Float64Array(3);
+  const w = new Float64Array(3);
+  const idx = new Int32Array(3);
   let prev = 0;
   for (let py = 0; py < size; py++) {
     const sy = 1 - ((py + 0.5) / size) * 2;
@@ -69,6 +76,13 @@ export function globeRaster(grid: Grid, size: number, lonDeg: number, latDeg: nu
       const id = nearestCell(grid, tmp[0], tmp[1], tmp[2], prev);
       const p = py * size + px;
       cell[p] = id;
+      locateTriangle(grid, id, tmp[0], tmp[1], tmp[2], idx, w);
+      tri[3 * p] = idx[0];
+      tri[3 * p + 1] = idx[1];
+      tri[3 * p + 2] = idx[2];
+      weight[3 * p] = w[0];
+      weight[3 * p + 1] = w[1];
+      weight[3 * p + 2] = w[2];
       const lit = vx * LIGHT[0] + sx * LIGHT[1] + sy * LIGHT[2];
       shade[p] = AMBIENT + (1 - AMBIENT) * Math.max(0, lit);
       prev = id;
@@ -76,18 +90,40 @@ export function globeRaster(grid: Grid, size: number, lonDeg: number, latDeg: nu
     }
     if (rowStart >= 0) prev = rowStart;
   }
-  const raster = { size, cell, shade };
+  const raster = { width: size, height: size, cell, tri, weight, shade };
   cache.set(key, raster);
   return raster;
 }
 
-/** Screen position (pixels) of a planet point for a view, or null when it faces away. */
-export function projectToGlobe(grid: Grid, cell: number, size: number, lonDeg: number, latDeg: number): [number, number] | null {
+/** A function giving the screen position of each cell for a view, or null when it faces away. */
+export function globeProjector(grid: Grid, size: number, lonDeg: number, latDeg: number): (cell: number) => [number, number] | null {
   const rotation = viewRotation(lonDeg, latDeg);
   const tmp = new Float64Array(3);
-  apply(rotation, grid.xyz[3 * cell], grid.xyz[3 * cell + 1], grid.xyz[3 * cell + 2], tmp, 0);
-  if (tmp[0] < 0) return null;
-  return [((tmp[1] + 1) / 2) * size, ((1 - tmp[2]) / 2) * size];
+  return (cell) => {
+    apply(rotation, grid.xyz[3 * cell], grid.xyz[3 * cell + 1], grid.xyz[3 * cell + 2], tmp, 0);
+    if (tmp[0] < 0) return null;
+    return [((tmp[1] + 1) / 2) * size, ((1 - tmp[2]) / 2) * size];
+  };
+}
+
+/** Screen position (pixels) of a planet point for a view, or null when it faces away. */
+export function projectToGlobe(grid: Grid, cell: number, size: number, lonDeg: number, latDeg: number): [number, number] | null {
+  return globeProjector(grid, size, lonDeg, latDeg)(cell);
+}
+
+/** Smooth paint of the globe into an RGBA buffer of size x size pixels. */
+export function paintGlobe(world: World, layer: Layer, size: number, lonDeg: number, latDeg: number, out: Uint8ClampedArray, sample = ANNUAL): void {
+  const grid = Grid.get(world.level);
+  const raster = globeRaster(grid, size, lonDeg, latDeg);
+  const radiusM = world.radiusKm * 1000;
+  const meters = (2 * radiusM) / size;
+  paintSmooth(world, raster, layer, out, {
+    sample,
+    shade: raster.shade,
+    project: globeProjector(grid, size, lonDeg, latDeg),
+    metersPerPixel: () => [meters, meters],
+    pixelsPerCell: (size / 2) * Math.sqrt((4 * Math.PI) / grid.n),
+  });
 }
 
 /** Interactive globe on a canvas: drag to turn, click to pick a cell. */
@@ -101,8 +137,8 @@ export class GlobeView {
   private sample = ANNUAL;
   private lon = 0;
   private lat = 20;
-  private colors: Uint8ClampedArray | null = null;
-  private colorsKey = '';
+  private flatColors: Uint8ClampedArray | null = null;
+  private flatKey = '';
   private selected = -1;
   private clickHandlers: ((cell: number) => void)[] = [];
   private dragging = false;
@@ -123,25 +159,25 @@ export class GlobeView {
     canvas.addEventListener('pointerdown', (e) => this.startDrag(e));
     canvas.addEventListener('pointermove', (e) => this.moveDrag(e));
     canvas.addEventListener('pointerup', (e) => this.endDrag(e));
-    canvas.addEventListener('pointerleave', () => { this.dragging = false; });
+    canvas.addEventListener('pointerleave', () => this.releaseDrag());
   }
 
   setWorld(world: World): void {
     this.world = world;
     this.selected = -1;
-    this.colors = null;
+    this.flatColors = null;
     this.draw();
   }
 
   setLayer(id: string): void {
     this.layerId = id;
-    this.colors = null;
+    this.flatColors = null;
     this.draw();
   }
 
   setSample(sample: number): void {
     this.sample = sample;
-    this.colors = null;
+    this.flatColors = null;
     this.draw();
   }
 
@@ -170,17 +206,23 @@ export class GlobeView {
     });
   }
 
-  draw(): void {
+  /** Full smooth paint at rest; flat paint while turning. */
+  draw(quick = false): void {
     if (!this.world) return;
     const world = this.world;
     const grid = Grid.get(world.level);
-    const raster = globeRaster(grid, this.size, this.lon, this.lat);
-    const key = `${world.params.seed}:${world.steps}:${world.level}:${this.layerId}:${this.sample}`;
-    if (!this.colors || this.colorsKey !== key) {
-      this.colors = cellColors(world, layerById(this.layerId), this.sample);
-      this.colorsKey = key;
+    const layer = layerById(this.layerId);
+    if (quick) {
+      const raster = globeRaster(grid, this.size, this.lon, this.lat);
+      const key = `${world.params.seed}:${world.steps}:${world.level}:${this.layerId}:${this.sample}`;
+      if (!this.flatColors || this.flatKey !== key) {
+        this.flatColors = cellColors(world, layer, this.sample);
+        this.flatKey = key;
+      }
+      paintCells(this.flatColors, raster.cell, this.image.data, raster.shade);
+    } else {
+      paintGlobe(world, layer, this.size, this.lon, this.lat, this.image.data, this.sample);
     }
-    paintCells(this.colors, raster.cell, this.image.data, raster.shade);
     this.ctx.putImageData(this.image, 0, 0);
     if (this.selected >= 0) {
       const at = projectToGlobe(grid, this.selected, this.size, this.lon, this.lat);
@@ -234,15 +276,22 @@ export class GlobeView {
       this.pendingDraw = true;
       requestAnimationFrame(() => {
         this.pendingDraw = false;
-        this.draw();
+        this.draw(true);
       });
     }
   }
 
-  private endDrag(event: PointerEvent): void {
+  private releaseDrag(): void {
     if (!this.dragging) return;
     this.dragging = false;
-    if (this.dragMoved || !this.world) return;
+    if (this.dragMoved) this.draw();
+  }
+
+  private endDrag(event: PointerEvent): void {
+    if (!this.dragging) return;
+    const moved = this.dragMoved;
+    this.releaseDrag();
+    if (moved || !this.world) return;
     const [px, py] = this.pixelOf(event);
     const x = Math.floor(px);
     const y = Math.floor(py);

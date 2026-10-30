@@ -62,6 +62,9 @@ function template(): string {
           <button id="variation" title="Keep the parameters, draw a new seed">New variation</button>
         </div>
         <div class="row">
+          <button id="realEarth" title="The real relief (NOAA ETOPO5) with the simulator's own rivers, climate and biomes, for comparison">Real Earth</button>
+        </div>
+        <div class="row">
           <label class="check"><input type="checkbox" id="autoPreview" checked /> Preview on change (coarser grid, under 2 s)</label>
         </div>
         <progress id="progress" max="1" value="0"></progress>
@@ -123,6 +126,7 @@ export function mountApp(root: HTMLElement): void {
   const presetSelect = q<HTMLSelectElement>('#preset');
   const buildButton = q<HTMLButtonElement>('#build');
   const variationButton = q<HTMLButtonElement>('#variation');
+  const realEarthButton = q<HTMLButtonElement>('#realEarth');
   const autoPreview = q<HTMLInputElement>('#autoPreview');
   const progress = q<HTMLProgressElement>('#progress');
   const status = q<HTMLDivElement>('#status');
@@ -193,8 +197,8 @@ export function mountApp(root: HTMLElement): void {
     const s: WorldStats = w.stats;
     const k = s.koppen;
     return [
-      ['Grid level', `${w.level} (${w.n.toLocaleString()} cells)${w.preview ? ', preview' : ''}`],
-      ['Tectonic step', `${w.steps} of ${w.params.tectonicAge}`],
+      ['Grid level', `${w.level} (${w.n.toLocaleString()} cells)${w.preview ? ', preview' : ''}${w.reference ? `, relief from ${w.reference}` : ''}`],
+      ['Tectonic step', w.reference ? 'measured relief, no tectonic history' : `${w.steps} of ${w.params.tectonicAge}`],
       ['Active plates', `${s.activePlates} of ${w.plates.length} ever (${w.params.plateCount} at the start)`],
       ['Plate events', `${w.events.filter((e) => e.type === 'rift').length} rifts, ${w.events.filter((e) => e.type === 'merge').length} mergers`],
       ['Ocean / land', `${pct(s.oceanFraction)} / ${pct(s.landFraction)}`],
@@ -245,7 +249,8 @@ export function mountApp(root: HTMLElement): void {
       .join('');
   };
 
-  const worldTitle = (w: World): string => `seed ${w.params.seed}, step ${w.steps} of ${w.params.tectonicAge}${w.preview ? ' (preview)' : ''}`;
+  const worldTitle = (w: World): string =>
+    w.reference ? `real Earth (${w.reference})` : `seed ${w.params.seed}, step ${w.steps} of ${w.params.tectonicAge}${w.preview ? ' (preview)' : ''}`;
 
   /** Paint `world` into the views that are on screen; the others catch up when shown. */
   const paintViews = (): void => {
@@ -297,7 +302,7 @@ export function mountApp(root: HTMLElement): void {
     }
     entries.forEach((e, i) => {
       if (e === current) return;
-      options.push(`<option value="g:${i}">seed ${e.world.params.seed}, final (step ${e.world.steps})</option>`);
+      options.push(`<option value="g:${i}">${e.world.reference ? 'real Earth' : `seed ${e.world.params.seed}, final (step ${e.world.steps})`}</option>`);
     });
     const previous = compareSelect.value;
     compareSelect.innerHTML = options.join('');
@@ -393,7 +398,7 @@ export function mountApp(root: HTMLElement): void {
     item.title = 'Click to restore this planet';
     const caption = document.createElement('div');
     caption.className = 'gallery-caption';
-    caption.textContent = `seed ${w.params.seed} · ocean ${(w.stats.oceanFraction * 100).toFixed(0)} % · ${w.stats.meanTemperature.toFixed(0)} °C · ${w.stats.continents} continents`;
+    caption.textContent = `${w.reference ? 'real Earth' : `seed ${w.params.seed}`} · ocean ${(w.stats.oceanFraction * 100).toFixed(0)} % · ${w.stats.meanTemperature.toFixed(0)} °C · ${w.stats.continents} continents`;
     item.append(canvas, caption);
     const entry: GalleryEntry = { world: w, keyframes: [], element: item };
     item.addEventListener('click', () => {
@@ -482,6 +487,46 @@ export function mountApp(root: HTMLElement): void {
     }
   };
 
+  let earthBytes: ArrayBuffer | null = null;
+  /** The real Earth: fetch the shipped relief once, build it in the worker, add it to the gallery. */
+  const runEarth = async (): Promise<void> => {
+    if (building) return;
+    building = true;
+    stopPlaying();
+    buildButton.disabled = true;
+    variationButton.disabled = true;
+    realEarthButton.disabled = true;
+    progress.value = 0;
+    status.textContent = 'loading the real relief';
+    try {
+      if (!earthBytes) {
+        const response = await fetch(`${import.meta.env.BASE_URL}data/earth-elevation-05deg.i16`);
+        if (!response.ok) throw new Error(`relief file: HTTP ${response.status}`);
+        earthBytes = await response.arrayBuffer();
+      }
+      const result = await client.buildEarth(earthBytes.slice(0), {
+        onProgress: (stage, fraction) => {
+          progress.value = fraction;
+          status.textContent = `real Earth: ${stage}`;
+        },
+      });
+      current = addToGallery(result.world);
+      timeline.value = '0';
+      selectedCell = -1;
+      showWorld(result.world);
+      renderTimeline();
+      renderCompareOptions();
+      status.textContent = `real Earth in ${(result.elapsedMs / 1000).toFixed(2)} s; compare it with a simulated planet in the Compare view`;
+    } catch (err) {
+      status.textContent = `error: ${err instanceof Error ? err.message : String(err)}`;
+    } finally {
+      building = false;
+      buildButton.disabled = false;
+      variationButton.disabled = false;
+      realEarthButton.disabled = false;
+    }
+  };
+
   const schedulePreview = (): void => {
     if (!autoPreview.checked) return;
     if (previewTimer) clearTimeout(previewTimer);
@@ -547,6 +592,7 @@ export function mountApp(root: HTMLElement): void {
   });
   for (const input of inputs.values()) input.addEventListener('input', schedulePreview);
   buildButton.addEventListener('click', () => void runBuild('full'));
+  realEarthButton.addEventListener('click', () => void runEarth());
   variationButton.addEventListener('click', () => {
     const seedInput = inputs.get('seed');
     if (seedInput) seedInput.value = String(crypto.getRandomValues(new Uint32Array(1))[0]);

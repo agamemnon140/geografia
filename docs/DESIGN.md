@@ -140,6 +140,15 @@ Mechanisms as built in M9 (`climate/ebm.ts`; replaces the banded temperature lin
 
 Calibration status after M9 (Earth preset): global mean 13 to 15 degrees C, equator 29, poles -14 to -19, ice sheets 6 to 11% of the land, permanent sea ice 7% of the ocean (Earth 3%). Sweeping insolation on a young Earth: 0.8 and 0.9 freeze over (mean -50 and -16, sea ice on 100% and 58% of the ocean), 1.0 is temperate, 1.1 is ice-free at 29 degrees, 1.3 bakes at 53. Greenhouse 3x warms by 14 degrees; air at 0.3 bar gives an 86-degree equator-to-pole contrast; eccentricity 0.2 with perihelion in southern summer expands the northern ice sheets (cool northern summers, the Milankovitch logic). Build 4.0 s.
 
+Revisions in M11, driven by the real Earth (section 3.9):
+
+- The energy balance is solved with Jacobi-preconditioned conjugate gradients (the operator is symmetric positive definite with the mean of the two cells' transport on each edge); the relaxation sweeps used before had left residuals of a hundred W/m^2 once the transport grew.
+- Transport is boosted inside the Hadley cell (times 5 at the equator, fading to the cell's edge), standing for the overturning circulation, with the base transport lowered to 0.45. This flattens the tropics as on Earth; the fit to the zonal sea-level profile has a 2.6-degree root-mean-square error, the mid-latitudes staying about 3 degrees too cold (storm tracks and ocean basins, not in the model). A slow rotator's planet-wide Hadley cell makes it nearly isothermal.
+- Land albedo 0.30 and ocean 0.27 (vegetated land is barely brighter than cloudy seas). The seasonal response scales with the absorbed share of sunlight relative to bare ground, so ice sheets and frozen seas swing far less than tundra, which is what keeps Antarctica's interior frozen in summer.
+- The ice iteration starts cold: the first pass counts as ice anything within 3 degrees of freezing, then lets the feedback melt what cannot sustain itself. Starting bare never formed an ice sheet (hysteresis); Earth is on the icy branch.
+
+Calibration status after M11 on the real relief: surface mean 14.5 degrees C (Earth 14.5), equator 26.9, Amazon 24 degrees and 2,700 mm, New York 13.0 (12.9 observed), Yakutsk region -12 (-9), Antarctic plateau -44 (-50), land precipitation 990 mm (Earth 800 to 900), ice sheets 15% of the land (10%), permanent sea ice 9% of the ocean (3%), Koppen A 15 / B 26 / C 16 / D 17 / E 26% of the land (Earth 19 / 30 / 14 / 25 / 13). The boreal belt is the largest remaining error: 50 to 70 N land runs 5 to 9 degrees too cold (London 1 degree against 11), so tundra replaces taiga and E grows at D's expense; the subtropical deserts are also too cool (Sahara 14 against 26, clear skies and dry surfaces not being in the balance). Build 5 s standalone.
+
 Mechanisms as built in M6 (`climate/ice.ts`, `climate/koppen.ts`):
 
 - Sea ice in every sample whose surface temperature is below -1.8 degrees C; an ice sheet where the warmest sample of a land cell stays below zero, altitude included. One albedo pass cools iced cells by up to 4 degrees and recomputes the extent. Ice sheets lock 2 km of water per cell; the final sea level is solved from the inventory minus that volume, so the water parameter is now ocean plus ice (Earth 1.364e9 km^3) and a cold planet gets a lower coastline by itself. The glacial-phase parameter cools the global mean by 6 degrees at 1, and everything else (ice, sea level, biomes) follows.
@@ -163,6 +172,10 @@ Stored alongside outputs so the inspector can show the causal chain: plateId, cr
 
 The tectonic loop is step-able and deterministic, so history is a matter of copying state. During a build, `keyframeSteps` picks evenly spaced steps (eight for an Earth-sized grid, four at level 7); at each one the simulation's per-cell state (elevation, sea level, plate, crust fields, boundaries, plates, hotspots) is copied into a `ReliefState`, about 3 MB at level 6. The final world is finalized and delivered first; the worker then runs `finalize` on every snapshot (hydrology, climate, ice, biomes, statistics, exactly the code path of the final world) and streams the results as keyframes compacted to Float32, roughly 17 MB each at level 6. A keyframe at step t is byte-for-byte the planet a build of tectonic age t would produce, which is the timeline's invariant test. Only the latest full build keeps its history in memory; gallery entries keep their final world.
 
+### 3.9 The real Earth as a reference (built in M11)
+
+The app ships the real relief so the simulator's later links can be judged on known ground: NOAA's ETOPO5 grid (NGDC, 1988, public domain), block-averaged from 5 arc-minutes to half a degree by `scripts/convert-etopo5.ts` and stored as 360 x 720 little-endian Int16 meters (518 KB). `sim/earth.ts` maps it onto the Earth grid (area-weighted mean of the samples nearest to each cell), reads crust type, thickness and sea-floor age back from the elevation with the model's own isostasy and subsidence rules, fixes the sea level at the datum (zero) and runs `finalize`: proxy hydrology, climate with the energy balance, ice, final rivers, Koppen and statistics, exactly the path a simulated planet takes after its tectonic loop. No tectonic provenance exists for it (one plate, no boundaries, no events), so the plate layers are blank and the explain drawer says so. In the app it is a button next to Build planet; it joins the gallery and the Compare view, and the command-line renderers take `Real` as a preset name.
+
 ## 4. Parameters
 
 | Parameter | Unit / range | Causal path |
@@ -175,7 +188,7 @@ The tectonic loop is step-able and deterministic, so history is a matter of copy
 | rotation period | hours | Coriolis, number of circulation cells, wind deflection |
 | insolation | relative to Earth | Global temperature baseline |
 | plate count | 4 to 30 | Initial plate seeds |
-| tectonic age | steps (50 to 400) | Loop length: more orogenies, more erosion |
+| tectonic age | steps (50 to 400) | Loop length: more orogenies, more erosion. One step is about a million years (cells of 110 km, plates at 0.1 to 0.5 cells per step, i.e. 1 to 5 cm per year); the default of 200 is the age of Earth's oldest sea floor, long enough to recycle the ocean floor once and to bring relief into balance between uplift and erosion. It is not the planet's age: the initial 40% of continental crust stands for the earlier billions of years |
 | glacial phase | 0 to 1 | Temperature offset, sea-level drop, ice extent |
 | mantle heat (phase 2) | relative to Earth (0.3 to 3) | Plate speed, hotspot volcanism, rifting rate |
 | greenhouse (phase 2) | relative to Earth (0.2 to 5) | Longwave trapping: global temperature, ice extent |
@@ -287,6 +300,10 @@ The screen is one planet seen three ways, chosen in a view bar above the stage:
 - Compare: two maps side by side. A is the planet on the timeline; B is any keyframe of the same build or the final state of any gallery entry, so "this basin before and after the mountains rose" and "same parameters, other seed" are one dropdown away. The statistics table grows a second column and a click in either pane explains that pane's cell.
 
 Around the stage: a legend under the layer selector (gradient bar with ticks for ramps, swatches for categories, a sentence for direction hues); the history slider gains a play button; Export history writes every keyframe of the current layer into one PNG strip with step captions, and Export PNG writes whatever view is on screen.
+
+### 8.5 Image quality (built in M11)
+
+Cells are 110 km across and a flat color per cell showed as a honeycomb. The painter now works per pixel: every pixel of the map and of the globe knows the mesh triangle it falls in and its barycentric weights (gnomonic projection onto the triangle, `render/interp.ts`), so continuous fields are interpolated, the coastline is the zero crossing of the interpolated elevation, and lakes are the region where the interpolated water level stands above the interpolated bed. Relief layers get a hillshade from the interpolated elevation with a cartographic exaggeration of 15 (slopes are tiny at 30 km per pixel), lit from the west-northwest, gentler under the sea. Rivers are lines from each river cell to its downstream cell, anti-aliased, with a width that grows with the logarithm of discharge, so the drainage network reads as a network instead of a trail of blue cells. Categorical layers (Koppen, plates, ice sheets) keep the nearest cell's class but inherit the smooth coastline. The globe paints flat while it turns and smooth at rest. The raster lookups are cached per projection and size; a full map paints in about 150 ms and a globe in about 90 ms.
 
 ## 9. Vision beyond v1
 
