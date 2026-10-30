@@ -1,5 +1,11 @@
 import type { World } from '../sim/pipeline.ts';
-import { cellDebugColor, hypsometric, type RGB } from './colors.ts';
+import {
+  BOUNDARY_CONVERGENT,
+  BOUNDARY_DIVERGENT,
+  BOUNDARY_SUBDUCTING,
+  BOUNDARY_TRANSFORM,
+} from '../sim/tectonics/simulation.ts';
+import { cellDebugColor, hypsometric, ramp, type RGB, type Stop } from './colors.ts';
 import type { Raster } from './raster.ts';
 
 /** A map layer: a color per cell. Painting to pixels goes through the raster lookup. */
@@ -9,11 +15,60 @@ export interface Layer {
   cellColor(world: World, cell: number): RGB;
 }
 
+const BOUNDARY_COLORS: Record<number, RGB> = {
+  [BOUNDARY_DIVERGENT]: [255, 70, 70],
+  [BOUNDARY_CONVERGENT]: [30, 30, 30],
+  [BOUNDARY_SUBDUCTING]: [255, 210, 0],
+  [BOUNDARY_TRANSFORM]: [90, 255, 140],
+};
+
+const AGE_RAMP: Stop[] = [
+  [0, [255, 245, 150]],
+  [30, [255, 170, 60]],
+  [70, [200, 70, 60]],
+  [110, [120, 30, 90]],
+  [150, [40, 10, 60]],
+];
+
+const THICKNESS_RAMP: Stop[] = [
+  [5, [30, 40, 90]],
+  [20, [70, 110, 150]],
+  [35, [110, 160, 110]],
+  [50, [220, 180, 90]],
+  [70, [255, 255, 255]],
+];
+
+function plateColor(plate: number): RGB {
+  return cellDebugColor(plate * 17 + 3);
+}
+
 export const LAYERS: Layer[] = [
   {
     id: 'elevation',
     name: 'Elevation',
     cellColor: (world, i) => hypsometric(world.elevation[i] - world.seaLevel),
+  },
+  {
+    id: 'plates',
+    name: 'Plates and boundaries',
+    cellColor: (world, i) => {
+      const b = world.boundary[i];
+      if (b !== 0) return BOUNDARY_COLORS[b];
+      const [r, g, bl] = plateColor(world.plate[i]);
+      const land = world.elevation[i] >= world.seaLevel;
+      const k = land ? 1 : 0.55;
+      return [r * k, g * k, bl * k];
+    },
+  },
+  {
+    id: 'crustAge',
+    name: 'Crust age (oceanic)',
+    cellColor: (world, i) => (world.crustType[i] === 1 ? [110, 110, 110] : ramp(AGE_RAMP, world.crustAge[i])),
+  },
+  {
+    id: 'thickness',
+    name: 'Crust thickness',
+    cellColor: (world, i) => ramp(THICKNESS_RAMP, world.thickness[i]),
   },
   {
     id: 'cells',

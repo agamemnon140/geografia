@@ -3,6 +3,7 @@ import { MapView } from '../render/map.ts';
 import { Grid, cellAreasKm2 } from '../sim/grid/grid.ts';
 import { CURRENT_MILESTONE, EARTH, PARAM_SPECS, PRESETS, type PlanetParams } from '../sim/params.ts';
 import type { World } from '../sim/pipeline.ts';
+import { BOUNDARY_NAMES } from '../sim/tectonics/simulation.ts';
 import { SimClient } from '../worker/client.ts';
 
 const RAD = 180 / Math.PI;
@@ -83,12 +84,16 @@ export function mountApp(root: HTMLElement): void {
     const s = w.stats;
     const rows: [string, string][] = [
       ['Grid level', `${w.level} (${w.n.toLocaleString()} cells)`],
+      ['Tectonic steps', `${w.steps}`],
+      ['Active plates', `${s.activePlates} of ${w.plates.length}`],
       ['Ocean', `${(s.oceanFraction * 100).toFixed(1)} %`],
       ['Land', `${(s.landFraction * 100).toFixed(1)} %`],
+      ['Continental crust', `${(s.continentalFraction * 100).toFixed(1)} %`],
       ['Highest point', `${s.maxElevation.toFixed(0)} m`],
       ['Deepest point', `${s.minElevation.toFixed(0)} m`],
       ['Mean land elevation', `${s.meanLandElevation.toFixed(0)} m`],
       ['Mean ocean depth', `${s.meanOceanDepth.toFixed(0)} m`],
+      ['Thickest crust', `${s.maxThickness.toFixed(0)} km`],
       ['Surface area', `${(s.totalAreaKm2 / 1e6).toFixed(1)} million km²`],
     ];
     statsTable.innerHTML = rows.map(([k, v]) => `<tr><td>${k}</td><td>${v}</td></tr>`).join('');
@@ -99,12 +104,19 @@ export function mountApp(root: HTMLElement): void {
     const grid = Grid.get(world.level);
     const area = cellAreasKm2(grid, world.radiusKm)[cell];
     const rel = world.elevation[cell] - world.seaLevel;
+    const orogeny = world.orogenyStep[cell];
     const lines = [
-      `cell       ${cell}`,
-      `lat/lon    ${(grid.lat[cell] * RAD).toFixed(2)}°, ${(grid.lon[cell] * RAD).toFixed(2)}°`,
-      `elevation  ${rel.toFixed(0)} m ${rel < 0 ? '(ocean)' : '(land)'}`,
-      `area       ${area.toFixed(0)} km²`,
-      `neighbors  ${grid.degree(cell)}`,
+      `cell        ${cell}`,
+      `lat/lon     ${(grid.lat[cell] * RAD).toFixed(2)}°, ${(grid.lon[cell] * RAD).toFixed(2)}°`,
+      `elevation   ${rel.toFixed(0)} m ${rel < 0 ? '(ocean)' : '(land)'}`,
+      `area        ${area.toFixed(0)} km²`,
+      `plate       ${world.plate[cell]}`,
+      `boundary    ${BOUNDARY_NAMES[world.boundary[cell]]}`,
+      `crust       ${world.crustType[cell] === 1 ? 'continental' : 'oceanic'}, ${world.thickness[cell].toFixed(1)} km`,
+      `crust age   ${world.crustAge[cell].toFixed(0)} steps`,
+      `volcanic    ${world.volcanic[cell].toFixed(2)} km`,
+      `sediment    ${world.sediment[cell].toFixed(2)} km`,
+      `orogeny     ${orogeny >= 0 ? `step ${orogeny} (${world.steps - orogeny} steps ago)` : 'none'}`,
     ];
     inspector.textContent = lines.join('\n');
   };

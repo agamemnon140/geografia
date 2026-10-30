@@ -12,26 +12,36 @@ function sameBytes(a: Float64Array, b: Float64Array): boolean {
   return true;
 }
 
+/** Shortest allowed run so the pipeline tests stay fast; the physics tests run the full age. */
+const QUICK = { ...EARTH, tectonicAge: 50 };
+
 describe('build', () => {
-  const world = build(EARTH);
+  const world = build(QUICK);
 
   it('is byte-for-byte deterministic for the same params and seed', () => {
-    const again = build(EARTH);
+    const again = build(QUICK);
     expect(sameBytes(world.elevation, again.elevation)).toBe(true);
+    expect(sameBytes(world.thickness, again.thickness)).toBe(true);
     expect(again.seaLevel).toBe(world.seaLevel);
     expect(again.stats).toEqual(world.stats);
   });
 
   it('changes with the seed', () => {
-    const other = build({ ...EARTH, seed: 2 });
+    const other = build({ ...QUICK, seed: 2 });
     expect(sameBytes(world.elevation, other.elevation)).toBe(false);
   });
 
-  it('uses level 6 for Earth and produces finite elevations', () => {
+  it('uses level 6 for Earth and produces finite fields', () => {
     expect(world.level).toBe(6);
     expect(world.n).toBe(40962);
+    expect(world.steps).toBe(50);
     expect(world.elevation.length).toBe(world.n);
-    for (const e of world.elevation) expect(Number.isFinite(e)).toBe(true);
+    for (let i = 0; i < world.n; i++) {
+      expect(Number.isFinite(world.elevation[i])).toBe(true);
+      expect(Number.isFinite(world.thickness[i])).toBe(true);
+      expect(world.plate[i]).toBeGreaterThanOrEqual(0);
+      expect(world.plate[i]).toBeLessThan(EARTH.plateCount);
+    }
     expect(Number.isFinite(world.seaLevel)).toBe(true);
   });
 
@@ -41,25 +51,25 @@ describe('build', () => {
     expect(world.stats.oceanFraction + world.stats.landFraction).toBeCloseTo(1, 12);
     expect(world.stats.maxElevation).toBeGreaterThan(0);
     expect(world.stats.minElevation).toBeLessThan(0);
-  });
-
-  it('gives the Earth preset a plausible ocean fraction with the placeholder terrain', () => {
-    expect(world.stats.oceanFraction).toBeGreaterThan(0.5);
-    expect(world.stats.oceanFraction).toBeLessThan(0.85);
+    const hypsSum = world.stats.hypsometry.reduce((a, b) => a + b, 0);
+    expect(hypsSum).toBeCloseTo(1, 9);
   });
 
   it('raises sea level with more water', () => {
-    const wet = build({ ...EARTH, waterVolume: 2 });
-    const dry = build({ ...EARTH, waterVolume: 0.5 });
+    const wet = build({ ...QUICK, waterVolume: 2 });
+    const dry = build({ ...QUICK, waterVolume: 0.5 });
     expect(wet.seaLevel).toBeGreaterThan(world.seaLevel);
     expect(dry.seaLevel).toBeLessThan(world.seaLevel);
     expect(wet.stats.oceanFraction).toBeGreaterThan(dry.stats.oceanFraction);
   });
 
-  it('builds every preset without NaN', () => {
+  it('builds every preset without NaN', { timeout: 120000 }, () => {
     for (const preset of PRESETS) {
-      const w = build({ ...preset.params, radiusKm: Math.min(preset.params.radiusKm, 6371) });
-      for (const e of w.elevation) expect(Number.isNaN(e)).toBe(false);
+      const w = build({ ...preset.params, radiusKm: Math.min(preset.params.radiusKm, 6371), tectonicAge: 50 });
+      for (let i = 0; i < w.n; i++) {
+        expect(Number.isNaN(w.elevation[i])).toBe(false);
+        expect(Number.isNaN(w.thickness[i])).toBe(false);
+      }
     }
   });
 });

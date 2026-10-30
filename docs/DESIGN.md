@@ -62,10 +62,20 @@ Per step:
 4. Convergent: oceanic vs anything, the oceanic side subducts; trench on the subducting side, volcanic arc on the overriding side at a fixed distance. Continental vs continental: crust thickens on both sides (orogeny), elevation rises, lastOrogenyStep updated.
 5. Transform: shear only, no vertical change.
 6. Hotspots: fixed points in the mantle frame; cells passing over get volcanic thickening, producing island chains.
-7. Isostasy: elevation = f(thickness, density by crustType) scaled by 1/g. Oceanic crust subsides with age (depth proportional to sqrt(age)).
+7. Isostasy: elevation = f(thickness, density by crustType); the isostatic height itself is independent of gravity (a density ratio), but the maximum crust thickness the lithosphere can hold scales with 1/g, so a heavier planet gets lower mountains. Oceanic crust subsides with age (depth proportional to sqrt(age)). Volcanic and sediment additions sit partly uncompensated and raise the surface more per km than compensated crust.
 8. Erosion: thermal (slope diffusion) every step; fluvial every K steps (see 3.4), stronger on young and high relief.
 
 Sea level is solved each step as the elevation where the cumulative area below equals the water volume.
+
+Mechanisms added while calibrating M2 (all in `tectonics/crust.ts` with their justification):
+
+- Crust is stored in plate frames as parcels; the world map is a view, so resampling never creates or destroys material. Overlaps that are not converging (transform sliding) are hidden, not consumed; a parcel stranded with no neighbor of its own plate is consumed whatever its velocity.
+- Continental rifting: before sea-floor spreading, a gap next to continental crust takes half of the margin's thickness as thinned continental crust, so rifted margins are gradual. Initial passive margins start stretched (16 to 30 km over four cells) to give shelves and slopes.
+- Continental collision thickens the suture cell and its neighbors, crust above 45 km flows toward thinner neighbors (plateau building), and a hard cap of 70 km / g pushes excess outward, accreting oceanic neighbors. Both colliding plates brake per event and slowly regain speed through the pole random walk (new subduction elsewhere).
+- Thin continental slivers (< 20 km) behave as oceanic crust in collisions. Volcanic piles cap at 10 km and basins at 10 km of sediment. Volcanic rock erodes first, then crust (continental) or sediment (oceanic).
+- About a third of the plates are seeded without continental crust, and continents are biased toward plate interiors, so most margins start passive.
+
+Calibration status after M2 (Earth preset, three seeds): ocean 64 to 69%, continental crust 36 to 39%, highest point 8.9 to 10.8 km, mean ocean depth 3.8 to 4.1 km, continental volume conserved within 3%, build 1.5 s. Known deviations: mean land elevation 1.5 km (Earth 0.84 km) and 15 to 24% of the surface above 1.5 km (Earth about 6%), because only thermal erosion exists so far; fluvial erosion in M3 is the physical fix. Plate speeds decay to 0.05 to 0.2 cells per step by step 200 under the collision brake; revisit when rifting of plates arrives in phase 2.
 
 ### 3.4 Hydrology (every K steps inside the loop, and once on the final state)
 
@@ -145,7 +155,7 @@ Per link, with the Earth preset, across several seeds:
 | Link | Test |
 |---|---|
 | Grid | cell count = 10 * 4^L + 2; neighbor symmetry; exactly 12 pentagons |
-| Tectonics | ocean fraction 60 to 75%; bimodal hypsometry (modes near -4 km and +0.5 km); continental crust area conserved within 5%; highest cells within 3 cells of a convergent boundary; oceanic crust age grows away from ridges |
+| Tectonics | ocean fraction 60 to 75%; bimodal hypsometry (modes near -4 km and +0.5 km); continental crust volume (thickness times area) conserved within 10%, erosion to the ocean included; highest cells carry orogeny, volcanic history or sit within 3 cells of a convergent boundary; oceanic crust age grows away from ridges |
 | Hydrology | every land cell reaches ocean or a lake; discharge non-decreasing downstream; no river flows uphill |
 | Temperature | zonal annual mean within Earth bands (equator 25 +/- 5 C, poles -20 +/- 15 C); lapse rate visible on mountains; ocean seasonal amplitude smaller than land |
 | Circulation | 3 cells per hemisphere for Earth; 1 for rotation of 50 days or more; trade winds easterly, mid-latitude westerly |
@@ -165,11 +175,39 @@ Per link, with the Earth preset, across several seeds:
 - M5: ocean currents, moisture advection, precipitation, final rivers with real precipitation, tests.
 - M6: ice and glacial phase, Koppen, presets, gallery with stats, explain inspector, end-to-end determinism test.
 
-## 8. Vision beyond v1
+## 8. User interface
+
+The UI exists to expose causality, not to decorate. Every number on screen has a path back to a parameter or a process, and every layer is a field the simulator actually computed.
+
+### 8.1 Layout
+
+- Left panel: preset, the ten parameters (disabled until the milestone that wires them, with the causal path as tooltip), Build and New variation buttons, progress and timing, layer selector, world statistics, cell inspector.
+- Center: one equirectangular map at a fixed internal resolution (1440 x 720), scaled to the window. Click selects a cell; the inspector shows its values and, from M6, its causal chain.
+- Bottom strip (from M6): gallery of recent variations as thumbnails with their statistics; clicking one restores it.
+- Phase 2 adds a time scrubber under the map and an A/B split view.
+
+### 8.2 UI by milestone
+
+| Milestone | UI deliverable |
+|---|---|
+| M1 | Panel, presets, map, elevation and grid layers, inspector with position, elevation and area |
+| M2 | Plates layer with boundary types, crust age, crust thickness; inspector shows plate, crust type, thickness, age, boundary, volcanic and sediment history |
+| M3 | Rivers and lakes layer, discharge in the inspector |
+| M4 | Temperature and wind layers with a month slider; circulation cell count in statistics |
+| M5 | Precipitation and ocean current layers; the final rivers |
+| M6 | Ice and Koppen layers, glacial phase, gallery with statistics, explain drawer with itemized components, parameters in the URL for sharing, PNG and JSON export |
+
+### 8.3 Rules
+
+- The UI never computes physics; it reads `World` arrays. Anything the inspector shows must be stored by the simulator as provenance.
+- Layers are pure functions from a cell to a color so the same painter serves the browser and the command-line PNG renderer.
+- Interaction stays responsive: builds run in the worker, progress is per stage and per tectonic step, and a level-5 preview (M6) answers parameter changes in under two seconds.
+
+## 9. Vision beyond v1
 
 Three further phases, each built on top of the previous one and governed by the same principles as v1: every output has a traceable causal path, the build is deterministic given (params, seed), and each link ships with tests against the Earth preset. Later phases encode hypotheses that are debated in the literature; the simulator treats them as toggleable rules in a sandbox, so the user can see which hypothesis leads to which outcome, not as claims of truth.
 
-### 8.1 Phase 2: planet history and deeper physics
+### 9.1 Phase 2: planet history and deeper physics
 
 Goal: watch the planet become what it is, and let the physics produce transitions (snowball, greenhouse, supercontinent cycles) instead of only end states.
 
@@ -182,7 +220,7 @@ Goal: watch the planet become what it is, and let the physics produce transition
 
 What this unlocks downstream: biogeography (phase 3) needs to know when landmasses connected and separated, and civilization (phase 4) needs land bridges at glacial maxima. Both are read directly from the timeline.
 
-### 8.2 Phase 3: biosphere (flora and fauna)
+### 9.2 Phase 3: biosphere (flora and fauna)
 
 Goal: a living planet whose life distribution follows from climate and from the planet's history.
 
@@ -191,7 +229,7 @@ Goal: a living planet whose life distribution follows from climate and from the 
 - Dynamics on the timeline. Land bridges exposed at glacial maxima let faunas exchange; climate that shifts faster than dispersal causes regional extinctions; megafauna persists where it co-evolved with predators and disappears where a new predator arrives suddenly (a toggleable hypothesis, relevant to domestication in phase 4).
 - Outputs: productivity, vegetation type, faunal realm, species-richness index, endemism index, large-herbivore and large-predator presence. Explain mode shows why a cell has the fauna it has ("isolated since step 120, no large herbivores arrived").
 
-### 8.3 Phase 4: civilization
+### 9.3 Phase 4: civilization
 
 Goal: answer questions such as where the best city sites are, where domestication would start, whether humans would reach every continent, and which regions would develop earliest, as consequences of the geography rather than as scripted outcomes. The first version is a set of explainable indices and diffusion processes, not an agent-based empire simulator; agents can come later on top of the indices.
 
@@ -206,7 +244,7 @@ Goal: answer questions such as where the best city sites are, where domesticatio
 
 Tests for the Earth preset: agricultural origins arise in a handful of seasonal-dry regions near wild grasslands; the largest east-west landmass spreads its package fastest; small isolated continents receive few domesticates; humans reach every landmass whose straits at glacial maximum are narrower than the crossing threshold; top city sites sit on coasts and large rivers rather than inland deserts; all results deterministic per seed.
 
-### 8.4 Sequencing and what v1 must preserve
+### 9.4 Sequencing and what v1 must preserve
 
 Order: phase 2 (history) before phase 3 (biosphere) before phase 4 (civilization), because each consumes the previous one's time series. Each phase is itself delivered by links with tests, like v1.
 
