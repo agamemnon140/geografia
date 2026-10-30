@@ -14,7 +14,8 @@ import type { Raster } from './raster.ts';
 /** What a layer's colors mean, for the legend (DESIGN 8.4). */
 export type Legend =
   | { kind: 'ramp'; stops: Stop[]; unit: string }
-  | { kind: 'categories'; items: { color: RGB; label: string }[] }
+  /** One swatch per item, or a row of swatches (`colors`) for a family of shades. */
+  | { kind: 'categories'; items: { color: RGB; colors?: RGB[]; label: string }[] }
   | { kind: 'text'; items: string[] };
 
 /**
@@ -248,12 +249,12 @@ export const LAYERS: Layer[] = [
     legend: {
       kind: 'categories',
       items: [
-        { color: KOPPEN_COLORS[2], label: 'A tropical, deep greens: Af darkest, Am, Aw lightest' },
-        { color: KOPPEN_COLORS[4], label: 'B arid: BWh red, BWk pink, BSh orange, BSk sand' },
-        { color: KOPPEN_COLORS[14], label: 'C temperate, yellow-greens: Cf, Cw, Cs olive; lighter when cooler' },
-        { color: KOPPEN_COLORS[26], label: 'D continental, purples: Ds, Dw, Df; lighter when colder' },
-        { color: KOPPEN_COLORS[29], label: 'E polar: ET tundra gray, EF ice cap white' },
-        { color: KOPPEN_SEA, label: 'sea (blue is kept for water)' },
+        { color: KOPPEN_COLORS[2], colors: KOPPEN_COLORS.slice(1, 4), label: 'Tropical, hot all year (deep greens): rainforest, monsoon, savanna with a dry season' },
+        { color: KOPPEN_COLORS[4], colors: KOPPEN_COLORS.slice(4, 8), label: 'Dry (reds and oranges): hot desert, cold desert, hot steppe, cold steppe' },
+        { color: KOPPEN_COLORS[14], colors: [KOPPEN_COLORS[8], KOPPEN_COLORS[11], KOPPEN_COLORS[14], KOPPEN_COLORS[16]], label: 'Mild winters (yellow-greens): dry-summer Mediterranean, dry-winter, rainy all year; paler where summers are cool' },
+        { color: KOPPEN_COLORS[26], colors: [KOPPEN_COLORS[17], KOPPEN_COLORS[21], KOPPEN_COLORS[25], KOPPEN_COLORS[28]], label: 'Cold winters, real summers (purples): forests of the north; paler where winters are harsher' },
+        { color: KOPPEN_COLORS[29], colors: [KOPPEN_COLORS[29], KOPPEN_COLORS[30]], label: 'Polar: tundra (gray, no month above 10 °C), ice cap (white, never above freezing)' },
+        { color: KOPPEN_SEA, label: 'Sea (blue is kept for water)' },
       ],
     },
     relief: 'light',

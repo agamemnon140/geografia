@@ -16,15 +16,15 @@ export const KOPPEN_OCEAN = 0;
 /** Climate codes, index into KOPPEN_NAMES and the layer palette. */
 export const KOPPEN_NAMES = [
   'ocean',
-  'Af tropical rainforest', 'Am tropical monsoon', 'Aw tropical savanna',
-  'BWh hot desert', 'BWk cold desert', 'BSh hot steppe', 'BSk cold steppe',
-  'Csa hot-summer mediterranean', 'Csb warm-summer mediterranean', 'Csc cold-summer mediterranean',
-  'Cwa monsoon humid subtropical', 'Cwb subtropical highland', 'Cwc cold subtropical highland',
-  'Cfa humid subtropical', 'Cfb oceanic', 'Cfc subpolar oceanic',
-  'Dsa', 'Dsb', 'Dsc', 'Dsd',
-  'Dwa', 'Dwb', 'Dwc', 'Dwd',
-  'Dfa hot-summer continental', 'Dfb warm-summer continental', 'Dfc subarctic', 'Dfd extremely cold subarctic',
-  'ET tundra', 'EF ice cap',
+  'Af tropical rainforest (hot and wet all year)', 'Am tropical monsoon (hot, a short dry spell)', 'Aw tropical savanna (hot, dry winter)',
+  'BWh hot desert', 'BWk cold desert', 'BSh hot steppe (semi-arid)', 'BSk cold steppe (semi-arid)',
+  'Csa Mediterranean, hot dry summer', 'Csb Mediterranean, warm dry summer', 'Csc Mediterranean, cool dry summer',
+  'Cwa humid subtropical, dry winter', 'Cwb subtropical highland, dry winter', 'Cwc cool highland, dry winter',
+  'Cfa humid subtropical (mild winter, hot summer)', 'Cfb oceanic (mild winter, warm summer)', 'Cfc subpolar oceanic (mild winter, cool summer)',
+  'Dsa continental, dry hot summer', 'Dsb continental, dry warm summer', 'Dsc continental, dry cool summer', 'Dsd continental, dry summer, very cold winter',
+  'Dwa continental, dry winter, hot summer', 'Dwb continental, dry winter, warm summer', 'Dwc subarctic, dry winter', 'Dwd subarctic, dry very cold winter',
+  'Dfa continental, hot summer (cold winter)', 'Dfb continental, warm summer (cold winter)', 'Dfc subarctic (short cool summer)', 'Dfd subarctic, extremely cold winter',
+  'ET tundra (no month above 10 °C)', 'EF ice cap (never above freezing)',
 ];
 
 const AF = 1, AM = 2, AW = 3, BWH = 4, BWK = 5, BSH = 6, BSK = 7;

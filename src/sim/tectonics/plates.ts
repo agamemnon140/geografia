@@ -1,7 +1,6 @@
 import { normalize3 } from '../grid/geometry.ts';
-import type { Grid } from '../grid/grid.ts';
 import type { Rng } from '../rng/xoshiro.ts';
-import { axisAngle, identity, multiply, type Mat3 } from './rotation.ts';
+import { axisAngle, multiply, type Mat3 } from './rotation.ts';
 
 export interface Plate {
   id: number;
@@ -19,19 +18,6 @@ export function randomUnit(rng: Rng): [number, number, number] {
   const phi = rng.range(-Math.PI, Math.PI);
   const r = Math.sqrt(1 - z * z);
   return [r * Math.cos(phi), r * Math.sin(phi), z];
-}
-
-/**
- * Plates with random Euler poles; `cellAngle` is the angular size of a cell,
- * plates move 0.15 to 0.5 cells per step at Earth's mantle heat, scaled by
- * `speed` (the square root of the relative mantle heat flux).
- */
-export function initPlates(count: number, rng: Rng, cellAngle: number, speed = 1): Plate[] {
-  const plates: Plate[] = [];
-  for (let p = 0; p < count; p++) {
-    plates.push({ id: p, axis: randomUnit(rng), rate: cellAngle * speed * rng.range(0.15, 0.5), rotation: identity() });
-  }
-  return plates;
 }
 
 /** Advance every plate's total rotation by one step. */
@@ -86,32 +72,3 @@ export function velocityAt(p: Plate, x: number, y: number, z: number, out: Float
   out[o + 2] = wx * y - wy * x;
 }
 
-/**
- * Initial plate layout: multi-source breadth-first growth from random seed
- * cells, with the visiting order shuffled at each layer so boundaries are not
- * perfectly regular Voronoi edges.
- */
-export function seedPlates(grid: Grid, count: number, rng: Rng): Int32Array {
-  const plate = new Int32Array(grid.n).fill(-1);
-  let queue: number[] = [];
-  for (let p = 0; p < count; p++) {
-    let c = rng.int(grid.n);
-    while (plate[c] >= 0) c = rng.int(grid.n);
-    plate[c] = p;
-    queue.push(c);
-  }
-  while (queue.length > 0) {
-    rng.shuffle(queue);
-    const next: number[] = [];
-    for (const c of queue) {
-      for (const nb of grid.neighbors(c)) {
-        if (plate[nb] < 0) {
-          plate[nb] = plate[c];
-          next.push(nb);
-        }
-      }
-    }
-    queue = next;
-  }
-  return plate;
-}

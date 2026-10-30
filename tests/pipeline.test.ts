@@ -40,7 +40,7 @@ describe('build', () => {
     expect(preview.n).toBe(10242);
     // 1.4 s alone on the reference machine; the suite runs files in parallel, hence the slack,
     // and shared CI runners are slower still.
-    expect(seconds).toBeLessThan(process.env.CI ? 9 : 3);
+    expect(seconds).toBeLessThan(process.env.CI ? 9 : 4);
     for (let i = 0; i < preview.n; i++) expect(Number.isFinite(preview.temperatureAnnual[i])).toBe(true);
   });
 

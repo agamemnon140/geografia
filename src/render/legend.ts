@@ -44,12 +44,15 @@ export function renderLegend(layer: Layer, container: HTMLElement): void {
     for (const item of legend.items) {
       const row = document.createElement('div');
       row.className = 'legend-row';
-      const swatch = document.createElement('span');
-      swatch.className = 'legend-swatch';
-      swatch.style.background = `rgb(${item.color.map((c) => Math.round(c)).join(',')})`;
+      for (const color of item.colors ?? [item.color]) {
+        const swatch = document.createElement('span');
+        swatch.className = 'legend-swatch';
+        swatch.style.background = `rgb(${color.map((c) => Math.round(c)).join(',')})`;
+        row.append(swatch);
+      }
       const label = document.createElement('span');
       label.textContent = item.label;
-      row.append(swatch, label);
+      row.append(label);
       container.append(row);
     }
   } else {

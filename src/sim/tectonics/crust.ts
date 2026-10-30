@@ -12,8 +12,14 @@ export const CONTINENTAL = 1;
 export const OCEANIC_THICKNESS_KM = 7;
 /** Typical continental crust thickness. */
 export const CONTINENTAL_THICKNESS_KM = 35;
-/** Surface height of 35 km continental crust in the model's reference frame; sea level is solved separately. */
-export const CONTINENTAL_BASE_M = 500;
+/**
+ * Surface height of 35 km continental crust in the model's reference frame;
+ * sea level is solved separately and comes out near -1100 m for Earth's
+ * water, so standard crust stands about 900 m above the sea, as Earth's
+ * old cratons do. (Was 500 while the start was noise blobs with wide
+ * thinned margins; the rifted start keeps more crust at full thickness.)
+ */
+export const CONTINENTAL_BASE_M = -200;
 /** Airy isostasy: (rho_mantle - rho_crust) / rho_mantle with 3300 and 2800 kg/m^3 gives ~0.15 m of surface per m of root, i.e. 150 m per km. */
 export const ISOSTASY_M_PER_KM = 150;
 /** Depth of a mid-ocean ridge crest. */
@@ -30,7 +36,7 @@ export const ADDED_M_PER_KM = 600;
 export const ADDED_CONTINENTAL_M_PER_KM = 300;
 /** Sediment is light and loads a basin that subsides under it: little surface rise per km. */
 export const SEDIMENT_M_PER_KM = 200;
-/** Passive margins are stretched: continental thickness one to four cells from the ocean at the start (slope and shelf). */
+/** Passive margins are stretched: continental thickness one to four cells from the ocean at the start (slope and shelf); about a quarter of the continental crust starts flooded, as on Earth. */
 export const MARGIN_THICKNESS_KM = [16, 20, 26, 30];
 /** Trench depression on the subducting side of a convergent boundary. */
 export const TRENCH_M = 2500;
@@ -64,13 +70,9 @@ export const MIN_THRUST_KM = 5;
 export const COLLISION_BRAKE = 0.97;
 /** Collision cells per step at which the brake saturates; shorter sutures brake proportionally less. */
 export const COLLISION_SATURATION_CELLS = 10;
-/** Share of plates seeded without continental crust (Earth has the Pacific, Nazca, Cocos, Philippine plates). */
-export const OCEANIC_PLATE_SHARE = 0.35;
 export const HOTSPOT_COUNT = 8;
 /** Fraction of the surface seeded as continental crust (Earth: ~40%, of which a quarter is flooded shelf and slope). */
 export const CONTINENTAL_FRACTION = 0.4;
-/** Bias of the continental seed toward plate interiors (0 = none); keeps most margins passive at the start. */
-export const INTERIOR_BIAS = 0.5;
 /** Steps between random walks of the Euler poles. */
 export const POLE_WALK_INTERVAL = 20;
 /** Steps between checks for plate births (rifts) and deaths (mergers) (DESIGN 9.1, built in M8). */
@@ -82,7 +84,7 @@ export const RIFT_LOCK_STEPS = 20;
 /** Continental area a plate needs before it can rift, as a fraction of the planet's surface (Earth: Africa is 6%). */
 export const RIFT_MIN_CONTINENT_FRACTION = 0.04;
 /** Probability per check that an eligible plate rifts, at Earth's mantle heat. */
-export const RIFT_PROBABILITY = 0.35;
+export const RIFT_PROBABILITY = 0.25;
 /** Relative opening rate across a new rift at its far end, in cells per step. */
 export const RIFT_RATE_CELLS = 0.3;
 /** Angular margin between the end of the continent and the relative pole of a rift, radians (about 10 degrees). */
@@ -101,7 +103,7 @@ export const FLUVIAL_INTERVAL = 5;
  * observed orogen denudation; the isostatic conversion below multiplies the
  * crust removed by 1/0.15.
  */
-export const FLUVIAL_K = 1200;
+export const FLUVIAL_K = 1500;
 /** A fluvial pass never removes more than this fraction of the drop to the downstream cell (explicit-scheme stability). */
 export const FLUVIAL_MAX_DROP_FRACTION = 0.5;
 

@@ -12,7 +12,6 @@ import {
   COLLISION_BRAKE,
   COLLISION_SATURATION_CELLS,
   CONTINENTAL,
-  CONTINENTAL_FRACTION,
   CONTINENTAL_THICKNESS_KM,
   CRUST_DIFFUSION,
   EROSION_RATE,
@@ -24,13 +23,11 @@ import {
   FLUVIAL_MAX_DROP_FRACTION,
   HOTSPOT_COUNT,
   HOTSPOT_RATE_KM,
-  INTERIOR_BIAS,
   ISOSTASY_M_PER_KM,
   MARGIN_THICKNESS_KM,
   MERGE_LOCK_STEPS,
   MERGE_MIN_SUTURE,
   MIN_THRUST_KM,
-  OCEANIC_PLATE_SHARE,
   PLATE_EVENT_INTERVAL,
   POLE_WALK_INTERVAL,
   RIFT_LOCK_STEPS,
@@ -49,7 +46,8 @@ import {
   volcanicFactor,
 } from './crust.ts';
 import { ParcelPool } from './parcels.ts';
-import { eulerVector, initPlates, perturbPlates, randomUnit, rotatePlates, seedPlates, setEulerVector, velocityAt, type Plate } from './plates.ts';
+import { genesis } from './genesis.ts';
+import { eulerVector, perturbPlates, randomUnit, rotatePlates, setEulerVector, velocityAt, type Plate } from './plates.ts';
 import { apply, applyTranspose } from './rotation.ts';
 import { normalize3 } from '../grid/geometry.ts';
 
@@ -149,67 +147,23 @@ export class TectonicsSim {
     for (let j = 0; j < n; j++) this.totalAreaKm2 += this.areaKm2[j];
 
     const count = params.plateCount;
-    this.plates = initPlates(count, rng.fork('poles'), this.cellAngle, this.speed);
+    // The initial condition: a rifted supercontinent and weighted Voronoi plates (tectonics/genesis.ts).
+    const start = genesis(grid, count, rng.fork('genesis'), this.cellAngle, this.speed);
+    this.plates = start.plates;
     for (let p = 0; p < count; p++) {
       this.slowSteps.push(0);
       this.dead.push(false);
       this.collisionCells.push(0);
     }
-    const plateOf = seedPlates(grid, count, rng.fork('plates'));
+    const plateOf = start.plateOf;
+    const isContinental = start.isContinental;
     this.pool = new ParcelPool(n, count);
     this.posDot = new Float64Array(this.pool.capacity);
-
-    // Initial crust: continental where a plate-biased noise field exceeds the quantile
-    // that yields CONTINENTAL_FRACTION of the cells; oceanic elsewhere with a smooth age field.
-    const crustNoise = new Noise3D(rng.fork('crust'));
     const detailNoise = new Noise3D(rng.fork('crust-detail'));
-    const ageNoise = new Noise3D(rng.fork('ocean-age'));
-    const offsetRng = rng.fork('plate-offset');
-    const offsets = new Float64Array(count);
-    for (let p = 0; p < count; p++) {
-      offsets[p] = offsetRng.float() < OCEANIC_PLATE_SHARE ? -10 : offsetRng.normal() * 0.12;
-    }
-    // Hop distance to the nearest cell of another plate: continents are seeded toward plate
-    // interiors so most margins start passive (oceanic), as on Earth.
-    const interior = new Int32Array(n).fill(-1);
-    let frontier: number[] = [];
-    for (let i = 0; i < n; i++) {
-      for (let t = grid.nbStart[i]; t < grid.nbStart[i + 1]; t++) {
-        if (plateOf[grid.nb[t]] !== plateOf[i]) {
-          interior[i] = 0;
-          frontier.push(i);
-          break;
-        }
-      }
-    }
-    for (let d = 1; frontier.length > 0; d++) {
-      const next: number[] = [];
-      for (const i of frontier) {
-        for (let t = grid.nbStart[i]; t < grid.nbStart[i + 1]; t++) {
-          const nb = grid.nb[t];
-          if (interior[nb] < 0) {
-            interior[nb] = d;
-            next.push(nb);
-          }
-        }
-      }
-      frontier = next;
-    }
-    const score = new Float64Array(n);
     const xyz = grid.xyz;
-    for (let i = 0; i < n; i++) {
-      score[i] =
-        crustNoise.fbm(xyz[3 * i] * 1.3, xyz[3 * i + 1] * 1.3, xyz[3 * i + 2] * 1.3, 5) +
-        offsets[plateOf[i]] +
-        INTERIOR_BIAS * Math.min(1, Math.max(0, interior[i]) / 8);
-    }
-    const sorted = Float64Array.from(score).sort();
-    const threshold = sorted[Math.min(n - 1, Math.floor((1 - CONTINENTAL_FRACTION) * n))];
-    const isContinental = new Uint8Array(n);
-    for (let i = 0; i < n; i++) isContinental[i] = score[i] > threshold ? 1 : 0;
-    // Passive margins: continental cells one and two hops from the ocean start stretched (shelves).
+    // Passive margins: continental cells one to four hops from the ocean start stretched (shelves).
     const toOcean = new Int32Array(n).fill(99);
-    frontier = [];
+    let frontier: number[] = [];
     for (let i = 0; i < n; i++) {
       if (isContinental[i]) continue;
       toOcean[i] = 0;
@@ -238,7 +192,7 @@ export class TectonicsSim {
         const base = d >= 1 && d <= MARGIN_THICKNESS_KM.length ? MARGIN_THICKNESS_KM[d - 1] : CONTINENTAL_THICKNESS_KM;
         this.pool.setContinental(id, base + 4 * detailNoise.fbm(x * 4, y * 4, z * 4, 4));
       } else {
-        this.pool.age[id] = Math.max(0, 60 + 60 * ageNoise.fbm(x * 2, y * 2, z * 2, 4));
+        this.pool.age[id] = start.oceanAge[i];
       }
     }
 
@@ -301,7 +255,11 @@ export class TectonicsSim {
     this.brakeCollisions();
     if (this.step % POLE_WALK_INTERVAL === 0) perturbPlates(this.plates, this.poleRng, this.cellAngle, this.speed);
     this.trackSpeeds();
-    if (this.step % PLATE_EVENT_INTERVAL === 0) this.evolvePlates();
+    if (this.step % PLATE_EVENT_INTERVAL === 0) {
+      this.evolvePlates();
+      // Mergers fuse parcels after this step's erosion; the cap must hold before the state is read.
+      this.enforceCap();
+    }
   }
 
   /** Continental collision resists: a plate slows in proportion to how much of it is colliding this step. */
@@ -544,6 +502,7 @@ export class TectonicsSim {
     pool.sediment[keep] = Math.min(SEDIMENT_CAP_KM, pool.sediment[keep] + pool.sediment[gone]);
     pool.eroded[keep] = Math.max(pool.eroded[keep], pool.eroded[gone]);
     pool.age[keep] = Math.min(pool.age[keep], pool.age[gone]);
+    this.spreadExcess(keep);
   }
 
   /** Continental crust volume in km times km^2 (thickness times frame-cell area), for conservation checks. */
@@ -1007,8 +966,13 @@ export class TectonicsSim {
       if (delta[j] !== 0) pool.thickness[claim[j]] += delta[j];
     }
     this.crustalFlow();
-    // Hard cap on every parcel, visible or not, repeated until the excess has flowed outward.
-    for (let pass = 0; pass < 10; pass++) {
+    this.enforceCap();
+  }
+
+  /** Hard cap on every parcel, visible or not, repeated until the excess has flowed outward. */
+  private enforceCap(): void {
+    const pool = this.pool;
+    for (let pass = 0; pass < 40; pass++) {
       let worst = 0;
       for (let i = 0; i < pool.count; i++) {
         if (!pool.alive[i] || pool.crustType[i] !== CONTINENTAL) continue;
