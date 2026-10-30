@@ -85,6 +85,16 @@ Calibration status after M2 (Earth preset, three seeds): ocean 64 to 69%, contin
 - Fluvial erosion: stream-power law, elevation lowered proportional to discharge^m * slope^n; simple deposition in lakes and coasts.
 - The final pass uses the real precipitation from 3.5 to produce the rivers, lakes and discharge layers.
 
+Mechanisms as built in M3 (`hydrology/` and `tectonics/crust.ts`):
+
+- Precipitation proxy: zonal profile of Earth's land climatology (wet equator, dry near 28 degrees, wet mid-latitudes, dry poles) times an ocean-proximity factor that decays over seven cells to a floor of 25%. Runoff is 40% of precipitation. The same proxy serves every planet until M5, so tilt and rotation do not yet touch the rivers.
+- Routing: priority-flood from the ocean with FIFO ties, so each land cell drains to its lowest neighbor on the flooded surface and lake cells drain toward the spill point by the shortest path. Topological order by Kahn's algorithm, discharge by one upstream-first pass. Discharge is in km^3 per year.
+- Lakes: each filled depression is a lake. Potential evaporation (2000 mm per year at the equator, falling with the cosine of latitude until M4 brings temperature) is compared with the inflow at the spill level; if evaporation wins, the lake is endorheic: its depression is re-routed by steepest descent into its pits, and the water body shrinks to the lowest cells whose evaporation balances the inflow. Upstream lakes can starve downstream ones, so the balance repeats until stable.
+- Fluvial erosion every 5 steps: each land cell loses K * sqrt(discharge) * slope meters, slope measured to the water surface downstream (sea or lake level at a mouth), never more than half the drop. Volcanic rock erodes first, then sediment, then continental crust; eroding crust lowers the surface by only 150 m per km removed (isostatic rebound). The products settle at the river mouth: deltas on the shelf, fills in lakes and closed basins, the rest lost to the deep ocean.
+- Every parcel records the surface it has lost to erosion, for the inspector.
+
+Calibration status after M3 (Earth preset, three seeds): mean land elevation 0.99 to 1.08 km (Earth 0.84; was 1.5 after M2), surface above 1.5 km 4 to 7% (was 15 to 24%), ocean 63 to 67%, mean land precipitation 600 to 750 mm per year (Earth about 800), lakes 1 to 2% of the land area, longest river 4,300 to 5,300 km, largest discharge 900 to 2,000 km^3 per year (Congo 1,300, Amazon 6,600), build 2.0 s. Remaining height sits in plateaus of dry interiors, where the proxy gives small rivers; M5's real precipitation and M6's ice decide whether that is right.
+
 ### 3.5 Climate (once, on the final relief; 12 declination samples)
 
 1. Insolation per cell per sample from latitude, axial tilt and the insolation factor.
@@ -156,7 +166,7 @@ Per link, with the Earth preset, across several seeds:
 |---|---|
 | Grid | cell count = 10 * 4^L + 2; neighbor symmetry; exactly 12 pentagons |
 | Tectonics | ocean fraction 60 to 75%; bimodal hypsometry (modes near -4 km and +0.5 km); continental crust volume (thickness times area) conserved within 10%, erosion to the ocean included; highest cells carry orogeny, volcanic history or sit within 3 cells of a convergent boundary; oceanic crust age grows away from ridges |
-| Hydrology | every land cell reaches ocean or a lake; discharge non-decreasing downstream; no river flows uphill |
+| Hydrology | every land cell reaches ocean or a lake; discharge non-decreasing downstream; no river flows uphill; delivered discharge equals land runoff; lake water above its bed at one level per open lake; a synthetic bowl fills to its spill when wet and shrinks to a closed lake when dry |
 | Temperature | zonal annual mean within Earth bands (equator 25 +/- 5 C, poles -20 +/- 15 C); lapse rate visible on mountains; ocean seasonal amplitude smaller than land |
 | Circulation | 3 cells per hemisphere for Earth; 1 for rotation of 50 days or more; trade winds easterly, mid-latitude westerly |
 | Currents | each basin has one gyre per hemisphere; western boundary warmer than eastern at the same latitude |

@@ -40,19 +40,26 @@ function report(): void {
   let total = 0;
   let cont = 0;
   let land = 0;
+  let landSum = 0;
   let maxE = -Infinity;
   for (let j = 0; j < grid.n; j++) {
     total += area[j];
     if (pool.crustType[sim.wParcel[j]] === CONTINENTAL) cont += area[j];
-    if (sim.elevation[j] >= sim.seaLevel) land += area[j];
-    maxE = Math.max(maxE, sim.elevation[j] - sim.seaLevel);
+    const rel = sim.elevation[j] - sim.seaLevel;
+    if (rel >= 0) {
+      land += area[j];
+      landSum += area[j] * rel;
+    }
+    maxE = Math.max(maxE, rel);
   }
   const v = (sim.continentalVolume() + sim.erodedContinental) / v0;
   const rates = sim.plates.map((p) => (p.rate / sim.cellAngle).toFixed(2)).join(' ');
+  const lakes = sim.hydrology.lakes;
+  const endorheic = lakes.filter((l) => l.endorheic).length;
   console.log(
     `step ${String(sim.step).padStart(3)} | alive ${alive} | cont ${(cont / total * 100).toFixed(1)}% land ${(land / total * 100).toFixed(1)}% ` +
-    `| maxT ${maxT.toFixed(0)} km (oce ${maxTOceanic.toFixed(0)}) maxV ${maxV.toFixed(1)} maxS ${maxS.toFixed(1)} | maxE ${maxE.toFixed(0)} m sea ${sim.seaLevel.toFixed(0)} ` +
-    `| vol ${v.toFixed(3)} | plates ${sim.activePlates()} | rates(cells/step) ${rates}`,
+    `| maxT ${maxT.toFixed(0)} km (oce ${maxTOceanic.toFixed(0)}) maxV ${maxV.toFixed(1)} maxS ${maxS.toFixed(1)} | maxE ${maxE.toFixed(0)} m meanLand ${(land > 0 ? landSum / land : 0).toFixed(0)} m sea ${sim.seaLevel.toFixed(0)} ` +
+    `| vol ${v.toFixed(3)} | lakes ${lakes.length} (${endorheic} closed) | plates ${sim.activePlates()} | rates ${rates}`,
   );
 }
 

@@ -95,6 +95,12 @@ export function mountApp(root: HTMLElement): void {
       ['Mean ocean depth', `${s.meanOceanDepth.toFixed(0)} m`],
       ['Thickest crust', `${s.maxThickness.toFixed(0)} km`],
       ['Surface area', `${(s.totalAreaKm2 / 1e6).toFixed(1)} million km²`],
+      ['Land precipitation', `${s.meanLandPrecipitation.toFixed(0)} mm/yr`],
+      ['Lakes', `${s.lakeCount} (${s.endorheicLakeCount} closed basins)`],
+      ['Lake area', `${(s.lakeFraction * 100).toFixed(2)} % of land`],
+      ['Land in closed basins', `${(s.endorheicLandFraction * 100).toFixed(1)} %`],
+      ['Longest river', `${s.longestRiverKm.toFixed(0)} km`],
+      ['Largest river', `${s.largestRiverKm3.toFixed(0)} km³/yr`],
     ];
     statsTable.innerHTML = rows.map(([k, v]) => `<tr><td>${k}</td><td>${v}</td></tr>`).join('');
   };
@@ -105,6 +111,16 @@ export function mountApp(root: HTMLElement): void {
     const area = cellAreasKm2(grid, world.radiusKm)[cell];
     const rel = world.elevation[cell] - world.seaLevel;
     const orogeny = world.orogenyStep[cell];
+    const lakeId = world.lake[cell];
+    const mouthLake = world.lake[world.mouth[cell]];
+    let drainsTo: string;
+    if (rel < 0) drainsTo = 'is ocean';
+    else if (mouthLake >= 0) drainsTo = `lake #${mouthLake}${world.lakes[mouthLake].endorheic ? ' (closed basin)' : ''}`;
+    else if (world.downstream[cell] < 0 && lakeId < 0) drainsTo = 'nowhere (pit)';
+    else drainsTo = 'ocean';
+    const lakeLine = lakeId >= 0
+      ? `lake        #${lakeId}, ${(world.waterLevel[cell] - world.elevation[cell]).toFixed(0)} m deep, surface ${(world.waterLevel[cell] - world.seaLevel).toFixed(0)} m${world.lakes[lakeId].endorheic ? ', closed basin' : ''}`
+      : null;
     const lines = [
       `cell        ${cell}`,
       `lat/lon     ${(grid.lat[cell] * RAD).toFixed(2)}°, ${(grid.lon[cell] * RAD).toFixed(2)}°`,
@@ -117,7 +133,13 @@ export function mountApp(root: HTMLElement): void {
       `volcanic    ${world.volcanic[cell].toFixed(2)} km`,
       `sediment    ${world.sediment[cell].toFixed(2)} km`,
       `orogeny     ${orogeny >= 0 ? `step ${orogeny} (${world.steps - orogeny} steps ago)` : 'none'}`,
+      `eroded      ${world.eroded[cell].toFixed(0)} m of surface`,
+      `precip      ${world.precipitation[cell].toFixed(0)} mm/yr`,
+      `discharge   ${world.discharge[cell].toFixed(1)} km³/yr`,
+      `river path  ${world.riverLength[cell].toFixed(0)} km from the farthest source`,
+      `drains to   ${drainsTo}`,
     ];
+    if (lakeLine) lines.push(lakeLine);
     inspector.textContent = lines.join('\n');
   };
 

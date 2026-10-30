@@ -5,7 +5,7 @@ import {
   BOUNDARY_SUBDUCTING,
   BOUNDARY_TRANSFORM,
 } from '../sim/tectonics/simulation.ts';
-import { cellDebugColor, hypsometric, ramp, type RGB, type Stop } from './colors.ts';
+import { cellDebugColor, hypsometric, mix, ramp, type RGB, type Stop } from './colors.ts';
 import type { Raster } from './raster.ts';
 
 /** A map layer: a color per cell. Painting to pixels goes through the raster lookup. */
@@ -38,6 +38,23 @@ const THICKNESS_RAMP: Stop[] = [
   [70, [255, 255, 255]],
 ];
 
+const PRECIPITATION_RAMP: Stop[] = [
+  [0, [245, 235, 200]],
+  [250, [225, 205, 140]],
+  [500, [180, 200, 120]],
+  [1000, [90, 170, 110]],
+  [1500, [40, 130, 140]],
+  [2200, [20, 70, 130]],
+];
+
+const LAKE_COLOR: RGB = [40, 120, 210];
+const RIVER_COLOR: RGB = [20, 70, 190];
+const LAND_WASH: RGB = [240, 236, 226];
+/** Discharge at which a river starts to show, km^3 per year (a basin of roughly ten cells). */
+const RIVER_MIN_KM3 = 40;
+/** Discharge drawn at full strength. */
+const RIVER_FULL_KM3 = 4000;
+
 function plateColor(plate: number): RGB {
   return cellDebugColor(plate * 17 + 3);
 }
@@ -47,6 +64,29 @@ export const LAYERS: Layer[] = [
     id: 'elevation',
     name: 'Elevation',
     cellColor: (world, i) => hypsometric(world.elevation[i] - world.seaLevel),
+  },
+  {
+    id: 'rivers',
+    name: 'Rivers and lakes',
+    cellColor: (world, i) => {
+      const rel = world.elevation[i] - world.seaLevel;
+      if (rel < 0) return hypsometric(rel);
+      if (world.lake[i] >= 0) return LAKE_COLOR;
+      const land = mix(hypsometric(rel), LAND_WASH, 0.45);
+      const q = world.discharge[i];
+      if (q < RIVER_MIN_KM3) return land;
+      const t = Math.min(1, Math.log(q / RIVER_MIN_KM3) / Math.log(RIVER_FULL_KM3 / RIVER_MIN_KM3));
+      return mix(land, RIVER_COLOR, 0.4 + 0.6 * t);
+    },
+  },
+  {
+    id: 'precipitation',
+    name: 'Precipitation (proxy)',
+    cellColor: (world, i) => {
+      const c = ramp(PRECIPITATION_RAMP, world.precipitation[i]);
+      if (world.elevation[i] >= world.seaLevel) return c;
+      return [c[0] * 0.55, c[1] * 0.55, c[2] * 0.6];
+    },
   },
   {
     id: 'plates',

@@ -69,6 +69,19 @@ export const CONTINENTAL_FRACTION = 0.4;
 export const INTERIOR_BIAS = 0.5;
 /** Steps between random walks of the Euler poles. */
 export const POLE_WALK_INTERVAL = 20;
+/** Steps between fluvial erosion passes (DESIGN 3.4: hydrology every K steps inside the loop). */
+export const FLUVIAL_INTERVAL = 5;
+/**
+ * Stream-power coefficient: meters of surface removed per step per unit of
+ * sqrt(discharge in km^3/yr) times slope. Calibrated so that a mountain cell
+ * with a small river (10 km^3/yr, 2% slope) loses a few tens of meters per
+ * step, i.e. a few hundredths of a millimeter per year, the low end of
+ * observed orogen denudation; the isostatic conversion below multiplies the
+ * crust removed by 1/0.15.
+ */
+export const FLUVIAL_K = 1200;
+/** A fluvial pass never removes more than this fraction of the drop to the downstream cell (explicit-scheme stability). */
+export const FLUVIAL_MAX_DROP_FRACTION = 0.5;
 
 /** Surface elevation (m, model frame) of a crust parcel before trench and sea-level effects. */
 export function crustElevation(type: number, thickness: number, age: number, volcanic: number, sediment: number): number {

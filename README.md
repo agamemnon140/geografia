@@ -12,8 +12,8 @@ npm install
 npm run dev        # app at the printed localhost URL
 npm test           # physics and invariant tests (vitest)
 npm run check      # type check
-npm run render -- out.png Earth 1 elevation   # PNG without a browser (layers: elevation, plates, crustAge, thickness, cells)
-node scripts/diag-tectonics.ts Earth 1 200 20 # per-step tectonics diagnostics for tuning
+npm run render -- out.png Earth 1 elevation   # PNG without a browser (layers: elevation, rivers, precipitation, plates, crustAge, thickness, cells)
+node scripts/diag-tectonics.ts Earth 1 200 20 # per-step tectonics and hydrology diagnostics for tuning
 ```
 
 ## Layout

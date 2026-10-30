@@ -1,5 +1,6 @@
 import { cellAreasKm2, type Grid } from '../grid/grid.ts';
 import { nearestCell } from '../grid/locate.ts';
+import { Hydrology } from '../hydrology/routing.ts';
 import { solveSeaLevel } from '../hypsometry.ts';
 import { relativeGravity, waterVolumeKm3, type PlanetParams } from '../params.ts';
 import { Noise3D } from '../rng/noise.ts';
@@ -16,6 +17,9 @@ import {
   EROSION_RATE,
   FLOW_RATE,
   FLOW_THRESHOLD_KM,
+  FLUVIAL_INTERVAL,
+  FLUVIAL_K,
+  FLUVIAL_MAX_DROP_FRACTION,
   HOTSPOT_COUNT,
   HOTSPOT_RATE_KM,
   INTERIOR_BIAS,
@@ -61,6 +65,8 @@ export class TectonicsSim {
   readonly pool: ParcelPool;
   readonly hotspots: Int32Array;
   readonly areaKm2: Float64Array;
+  /** Shared with the pipeline, which runs the final pass on the finished relief. */
+  readonly hydrology: Hydrology;
   readonly waterKm3: number;
   readonly cap: number;
   readonly cellAngle: number;
@@ -97,6 +103,7 @@ export class TectonicsSim {
     const n = grid.n;
     this.cellAngle = Math.sqrt((4 * Math.PI) / n);
     this.areaKm2 = cellAreasKm2(grid, params.radiusKm);
+    this.hydrology = new Hydrology(grid, this.areaKm2, params.radiusKm);
     this.waterKm3 = waterVolumeKm3(params);
     this.cap = thicknessCap(relativeGravity(params));
     this.poleRng = rng.fork('pole-walk');
@@ -217,6 +224,9 @@ export class TectonicsSim {
       this.stepOnce();
       if (s % 10 === 9 || s === steps - 1) onProgress((s + 1) / steps);
     }
+    // The elevation of the last step was computed before its erosion; refresh so the
+    // output matches the parcels.
+    this.computeElevation();
   }
 
   stepOnce(): void {
@@ -228,6 +238,7 @@ export class TectonicsSim {
     this.classifyBoundaries();
     this.computeElevation();
     this.erode();
+    if ((this.step + 1) % FLUVIAL_INTERVAL === 0) this.erodeFluvial();
     this.applyHotspots();
     this.ageCrust();
     this.step++;
@@ -650,7 +661,6 @@ export class TectonicsSim {
     const claim = this.wParcel;
     const elevation = this.elevation;
     const sea = this.seaLevel;
-    const area = this.areaKm2;
     for (let j = 0; j < grid.n; j++) {
       const h = elevation[j] - sea;
       if (h <= 0) continue;
@@ -664,22 +674,8 @@ export class TectonicsSim {
         }
       }
       if (lowest === j) continue;
-      const i = claim[j];
-      const de = EROSION_RATE * h;
-      let dk: number;
-      if (pool.volcanic[i] > 0) {
-        // Volcanic rock sits on top and erodes first.
-        dk = Math.min(de / volcanicFactor(pool.crustType[i]), pool.volcanic[i]);
-        pool.volcanic[i] -= dk;
-      } else if (pool.crustType[i] === CONTINENTAL) {
-        dk = de / ISOSTASY_M_PER_KM;
-        pool.thickness[i] -= dk;
-        this.erodedContinental += dk * area[j];
-      } else {
-        dk = Math.min(de / SEDIMENT_M_PER_KM, pool.sediment[i]);
-        if (dk <= 0) continue;
-        pool.sediment[i] -= dk;
-      }
+      const dk = this.denude(j, EROSION_RATE * h);
+      if (dk <= 0) continue;
       const target = claim[lowest];
       if (pool.sediment[target] < SEDIMENT_CAP_KM) pool.sediment[target] += dk;
     }
@@ -717,6 +713,97 @@ export class TectonicsSim {
         }
       }
       if (worst < 1) break;
+    }
+  }
+
+  /**
+   * Remove `de` meters of surface from the parcel under world cell j: volcanic
+   * rock first, then sediment, then continental crust. Eroding continental
+   * crust lowers the surface by only 150 m per km removed (isostatic rebound),
+   * so a 1 km drop in elevation strips about 7 km of crust. Returns the
+   * volume removed as km of thickness, to be deposited elsewhere.
+   */
+  private denude(j: number, de: number): number {
+    const pool = this.pool;
+    const i = this.wParcel[j];
+    let dk: number;
+    if (pool.volcanic[i] > 0) {
+      const factor = volcanicFactor(pool.crustType[i]);
+      dk = Math.min(de / factor, pool.volcanic[i]);
+      pool.volcanic[i] -= dk;
+      pool.eroded[i] += dk * factor;
+    } else if (pool.sediment[i] > 0) {
+      dk = Math.min(de / SEDIMENT_M_PER_KM, pool.sediment[i]);
+      pool.sediment[i] -= dk;
+      pool.eroded[i] += dk * SEDIMENT_M_PER_KM;
+    } else if (pool.crustType[i] === CONTINENTAL) {
+      dk = de / ISOSTASY_M_PER_KM;
+      pool.thickness[i] -= dk;
+      this.erodedContinental += dk * this.areaKm2[j];
+      pool.eroded[i] += de;
+    } else {
+      return 0;
+    }
+    return dk;
+  }
+
+  /**
+   * Stream-power erosion along the drainage network (DESIGN 3.4), every
+   * FLUVIAL_INTERVAL steps: each land cell loses K * sqrt(discharge) * slope
+   * meters per step, where the slope is measured to the water surface of the
+   * downstream cell (sea level or lake level at a mouth, so base level is the
+   * water, not the sea floor). Lake beds do not erode. The products travel
+   * down the network and settle at the river mouth: deltas on the shelf,
+   * fills in lakes and closed basins.
+   */
+  private erodeFluvial(): void {
+    const grid = this.grid;
+    const hydro = this.hydrology;
+    this.computeElevation();
+    hydro.applyProxyPrecipitation(this.elevation, this.seaLevel);
+    hydro.run(this.elevation, this.seaLevel);
+    const elevation = this.elevation;
+    const sea = this.seaLevel;
+    const down = hydro.downstream;
+    const lake = hydro.lake;
+    const level = hydro.waterLevel;
+    const discharge = hydro.discharge;
+    const mouth = hydro.mouth;
+    for (let j = 0; j < grid.n; j++) {
+      if (elevation[j] < sea || lake[j] >= 0) continue;
+      const d = down[j];
+      if (d < 0) continue;
+      const base = level[d] > sea ? level[d] : sea;
+      const drop = elevation[j] - base;
+      if (drop <= 0) continue;
+      const slope = drop / hydro.hopDistanceM(j, d);
+      const de = Math.min(FLUVIAL_K * Math.sqrt(discharge[j]) * slope * FLUVIAL_INTERVAL, FLUVIAL_MAX_DROP_FRACTION * drop);
+      const dk = this.denude(j, de);
+      if (dk > 0) this.deposit(mouth[j], dk);
+    }
+  }
+
+  /** Settle eroded material on a cell, spilling to its neighbors once the basin is full; the rest is lost to the deep ocean. */
+  private deposit(j: number, dk: number): void {
+    const pool = this.pool;
+    const claim = this.wParcel;
+    let rest = dk;
+    const i = claim[j];
+    const room = SEDIMENT_CAP_KM - pool.sediment[i];
+    if (room > 0) {
+      const put = room < rest ? room : rest;
+      pool.sediment[i] += put;
+      rest -= put;
+    }
+    if (rest <= 0) return;
+    const grid = this.grid;
+    for (let t = grid.nbStart[j]; t < grid.nbStart[j + 1] && rest > 0; t++) {
+      const b = claim[grid.nb[t]];
+      const r = SEDIMENT_CAP_KM - pool.sediment[b];
+      if (r <= 0) continue;
+      const put = r < rest ? r : rest;
+      pool.sediment[b] += put;
+      rest -= put;
     }
   }
 

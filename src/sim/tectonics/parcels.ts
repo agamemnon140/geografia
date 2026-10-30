@@ -25,6 +25,8 @@ export class ParcelPool {
   age: Float64Array;
   volcanic: Float64Array;
   sediment: Float64Array;
+  /** Surface lowered by erosion over the parcel's life, meters (provenance for the inspector). */
+  eroded: Float64Array;
   orogenyStep: Int32Array;
   frameIndex: Int32Array[];
 
@@ -39,6 +41,7 @@ export class ParcelPool {
     this.age = new Float64Array(this.capacity);
     this.volcanic = new Float64Array(this.capacity);
     this.sediment = new Float64Array(this.capacity);
+    this.eroded = new Float64Array(this.capacity);
     this.orogenyStep = new Int32Array(this.capacity);
     this.frameIndex = [];
     for (let p = 0; p < plateCount; p++) this.frameIndex.push(new Int32Array(n).fill(-1));
@@ -61,6 +64,7 @@ export class ParcelPool {
     this.age[id] = 0;
     this.volcanic[id] = 0;
     this.sediment[id] = 0;
+    this.eroded[id] = 0;
     this.orogenyStep[id] = -1;
     this.frameIndex[plate][frameCell] = id;
     return id;
@@ -96,6 +100,7 @@ export class ParcelPool {
     this.age = grow64(this.age);
     this.volcanic = grow64(this.volcanic);
     this.sediment = grow64(this.sediment);
+    this.eroded = grow64(this.eroded);
     this.capacity = cap;
   }
 }

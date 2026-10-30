@@ -42,6 +42,11 @@ const HYPSOMETRY: Stop[] = [
   [6500, [255, 255, 255]],
 ];
 
+/** Linear blend of two colors; t = 0 gives a, t = 1 gives b. */
+export function mix(a: RGB, b: RGB, t: number): RGB {
+  return [lerp(a[0], b[0], t), lerp(a[1], b[1], t), lerp(a[2], b[2], t)];
+}
+
 /** Classic hypsometric tint for elevation relative to sea level (meters). */
 export function hypsometric(relativeElevation: number): RGB {
   return relativeElevation < 0 ? ramp(BATHYMETRY, relativeElevation) : ramp(HYPSOMETRY, relativeElevation);
