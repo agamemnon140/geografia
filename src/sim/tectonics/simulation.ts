@@ -6,12 +6,17 @@ import { relativeGravity, waterVolumeKm3, type PlanetParams } from '../params.ts
 import { Noise3D } from '../rng/noise.ts';
 import type { Rng } from '../rng/xoshiro.ts';
 import {
+  ANDEAN_RADIUS,
+  ANDEAN_SHORTENING_KM,
+  ARC_OVERRIDE_KM,
+  ARC_ACCRETION_KM,
   ARC_RADIUS,
   ARC_RATE_KM,
   BUOYANT_THICKNESS_KM,
   COLLISION_BRAKE,
   COLLISION_SATURATION_CELLS,
   CONTINENTAL,
+  CONTINENTAL_BASE_M,
   CONTINENTAL_THICKNESS_KM,
   CRUST_DIFFUSION,
   EROSION_RATE,
@@ -24,7 +29,6 @@ import {
   HOTSPOT_COUNT,
   HOTSPOT_RATE_KM,
   ISOSTASY_M_PER_KM,
-  MARGIN_THICKNESS_KM,
   MERGE_LOCK_STEPS,
   MERGE_MIN_SUTURE,
   MIN_THRUST_KM,
@@ -34,27 +38,38 @@ import {
   RIFT_MIN_CONTINENT_FRACTION,
   RIFT_MIN_THICKNESS_KM,
   RIFT_POLE_MARGIN,
+  RIFT_FAIL_HINGE,
+  RIFT_FAIL_PROBABILITY,
+  RIFT_FAIL_STEPS,
+  RIFT_OFFSET,
   RIFT_PROBABILITY,
   RIFT_RATE_CELLS,
+  SLAB_PULL_RATE,
+  SLAB_PULL_SATURATION_CELLS,
+  SLAB_PULL_SPEED_CELLS,
   SLOW_RATE_CELLS,
   SEDIMENT_CAP_KM,
   SEDIMENT_M_PER_KM,
-  TRENCH_M,
+  SUPERCONTINENT_FRACTION,
+  OCEANIC,
+  OCEANIC_THICKNESS_KM,
   VOLCANIC_CAP_KM,
+  convergentDepression,
   crustElevation,
   thicknessCap,
   volcanicFactor,
 } from './crust.ts';
 import { ParcelPool } from './parcels.ts';
 import { genesis } from './genesis.ts';
+import { makeRiftPath, riftDistance } from './riftpath.ts';
 import { eulerVector, perturbPlates, randomUnit, rotatePlates, setEulerVector, velocityAt, type Plate } from './plates.ts';
 import { apply, applyTranspose } from './rotation.ts';
 import { normalize3 } from '../grid/geometry.ts';
 
-/** A plate birth (rift: `plate` split off `other`) or death (merge: `plate` joined `other`). */
+/** A plate birth (rift: `plate` split off `other`), a failed rift (`plate` welded back onto `other`) or a death (merge: `plate` joined `other`). */
 export interface TectonicEvent {
   step: number;
-  type: 'rift' | 'merge';
+  type: 'rift' | 'fail' | 'merge';
   plate: number;
   other: number;
 }
@@ -98,12 +113,18 @@ export class TectonicsSim {
   erodedContinental = 0;
   /** Plate births and deaths, in order (DESIGN 9.1). */
   readonly events: TectonicEvent[] = [];
+  /** Running counts of what the loop did, for diagnostics. */
+  readonly tally = { subductions: 0, collisions: 0, accretions: 0, andeanKm: 0 };
   /** Consecutive steps each plate has spent below the locked speed. */
   readonly slowSteps: number[] = [];
   /** Plates that merged into another and own nothing anymore. */
   readonly dead: boolean[] = [];
   /** Continental collision cells per plate in the current step, for the brake. */
   private collisionCells: number[] = [];
+  /** Rifts that will fail: the child welds back onto its parent at the given step. */
+  private failingRifts: { child: number; parent: number; step: number }[] = [];
+  private pullSum = new Float64Array(0);
+  private pullCells = new Int32Array(0);
   private eventRng: Rng;
   private totalAreaKm2 = 0;
 
@@ -125,6 +146,7 @@ export class TectonicsSim {
   private stampCounter = 0;
   private arcQueue = new Int32Array(128);
   private arcDist = new Int32Array(128);
+  private andeanFound = new Int32Array(32);
   private delta: Float64Array;
   private flowDelta = new Float64Array(0);
   private tried = new Int32Array(8);
@@ -161,36 +183,14 @@ export class TectonicsSim {
     this.posDot = new Float64Array(this.pool.capacity);
     const detailNoise = new Noise3D(rng.fork('crust-detail'));
     const xyz = grid.xyz;
-    // Passive margins: continental cells one to four hops from the ocean start stretched (shelves).
-    const toOcean = new Int32Array(n).fill(99);
-    let frontier: number[] = [];
-    for (let i = 0; i < n; i++) {
-      if (isContinental[i]) continue;
-      toOcean[i] = 0;
-      frontier.push(i);
-    }
-    for (let d = 1; d <= MARGIN_THICKNESS_KM.length && frontier.length > 0; d++) {
-      const next: number[] = [];
-      for (const i of frontier) {
-        for (let t = grid.nbStart[i]; t < grid.nbStart[i + 1]; t++) {
-          const nb = grid.nb[t];
-          if (toOcean[nb] > d) {
-            toOcean[nb] = d;
-            next.push(nb);
-          }
-        }
-      }
-      frontier = next;
-    }
+    // Margins (shelves, slopes, troughs) come with the initial condition; a little detail noise on top.
     for (let i = 0; i < n; i++) {
       const id = this.pool.alloc(plateOf[i], i, i);
       const x = xyz[3 * i];
       const y = xyz[3 * i + 1];
       const z = xyz[3 * i + 2];
       if (isContinental[i]) {
-        const d = toOcean[i];
-        const base = d >= 1 && d <= MARGIN_THICKNESS_KM.length ? MARGIN_THICKNESS_KM[d - 1] : CONTINENTAL_THICKNESS_KM;
-        this.pool.setContinental(id, base + 4 * detailNoise.fbm(x * 4, y * 4, z * 4, 4));
+        this.pool.setContinental(id, start.thickness[i] + 4 * detailNoise.fbm(x * 4, y * 4, z * 4, 4));
       } else {
         this.pool.age[id] = start.oceanAge[i];
       }
@@ -252,6 +252,7 @@ export class TectonicsSim {
     this.applyHotspots();
     this.ageCrust();
     this.step++;
+    this.slabPull();
     this.brakeCollisions();
     if (this.step % POLE_WALK_INTERVAL === 0) perturbPlates(this.plates, this.poleRng, this.cellAngle, this.speed);
     this.trackSpeeds();
@@ -259,6 +260,73 @@ export class TectonicsSim {
       this.evolvePlates();
       // Mergers fuse parcels after this step's erosion; the cap must hold before the state is read.
       this.enforceCap();
+    }
+  }
+
+  /**
+   * Slab pull: each plate's Euler vector relaxes toward the rotation that
+   * carries its subducting oceanic edge into the trench. The rotation that
+   * moves a point x along a tangent direction n is x cross n; summing over
+   * the plate's subducting cells gives the pull direction, and the length of
+   * the trench sets its strength.
+   */
+  private slabPull(): void {
+    const grid = this.grid;
+    const xyz = grid.xyz;
+    const pool = this.pool;
+    const wPlate = this.wPlate;
+    const claim = this.wParcel;
+    const plates = this.plates;
+    const count = plates.length;
+    if (this.pullSum.length < 3 * count) {
+      this.pullSum = new Float64Array(3 * count);
+      this.pullCells = new Int32Array(count);
+    }
+    const sum = this.pullSum;
+    const cells = this.pullCells;
+    sum.fill(0);
+    cells.fill(0);
+    for (let j = 0; j < grid.n; j++) {
+      if (this.boundary[j] !== BOUNDARY_SUBDUCTING) continue;
+      const i = claim[j];
+      if (pool.crustType[i] === CONTINENTAL && pool.thickness[i] >= BUOYANT_THICKNESS_KM) continue;
+      const p = wPlate[j];
+      const xj = xyz[3 * j];
+      const yj = xyz[3 * j + 1];
+      const zj = xyz[3 * j + 2];
+      let nx = 0;
+      let ny = 0;
+      let nz = 0;
+      for (let t = grid.nbStart[j]; t < grid.nbStart[j + 1]; t++) {
+        const nb = grid.nb[t];
+        if (wPlate[nb] === p) continue;
+        nx += xyz[3 * nb] - xj;
+        ny += xyz[3 * nb + 1] - yj;
+        nz += xyz[3 * nb + 2] - zj;
+      }
+      const len = Math.hypot(nx, ny, nz);
+      if (len < 1e-12) continue;
+      nx /= len;
+      ny /= len;
+      nz /= len;
+      sum[3 * p] += yj * nz - zj * ny;
+      sum[3 * p + 1] += zj * nx - xj * nz;
+      sum[3 * p + 2] += xj * ny - yj * nx;
+      cells[p]++;
+    }
+    for (let p = 0; p < count; p++) {
+      if (cells[p] === 0 || this.dead[p]) continue;
+      const len = Math.hypot(sum[3 * p], sum[3 * p + 1], sum[3 * p + 2]);
+      if (len < 1e-12) continue;
+      const speed = SLAB_PULL_SPEED_CELLS * this.cellAngle * this.speed * Math.min(1, cells[p] / SLAB_PULL_SATURATION_CELLS);
+      const [ex, ey, ez] = eulerVector(plates[p]);
+      const k = SLAB_PULL_RATE;
+      setEulerVector(
+        plates[p],
+        ex + k * ((sum[3 * p] / len) * speed - ex),
+        ey + k * ((sum[3 * p + 1] / len) * speed - ey),
+        ez + k * ((sum[3 * p + 2] / len) * speed - ez),
+      );
     }
   }
 
@@ -280,25 +348,39 @@ export class TectonicsSim {
   }
 
   /**
-   * Plate births and deaths (DESIGN 9.1). A plate locked along a long
-   * continental suture merges into the plate it collided with; a large
-   * continental plate that has been stalled for a while rifts, because
-   * mantle heat piles up under a motionless continent. Hotter mantles rift
-   * more often.
+   * Plate births and deaths (DESIGN 9.1, M13). A rift that was going to fail
+   * welds its child back onto the parent, leaving the gulf it opened. A plate
+   * locked along a long continental suture merges into the plate it collided
+   * with. A large continental plate that has been stalled for a while rifts,
+   * because mantle heat piles up under a motionless continent, and a
+   * supercontinent rifts whether it moves or not. Hotter mantles rift more
+   * often, and some rifts are born to fail.
    */
   private evolvePlates(): void {
     const plates = this.plates;
+    const due = this.failingRifts.filter((f) => f.step <= this.step);
+    this.failingRifts = this.failingRifts.filter((f) => f.step > this.step);
+    for (const f of due) {
+      if (this.dead[f.child] || this.dead[f.parent]) continue;
+      this.merge(f.child, f.parent);
+      this.events[this.events.length - 1].type = 'fail';
+    }
     for (let a = 0; a < plates.length; a++) {
       if (this.dead[a] || this.slowSteps[a] < MERGE_LOCK_STEPS) continue;
       const [b, suture] = this.longestSuture(a);
       if (b >= 0 && suture >= MERGE_MIN_SUTURE) this.merge(a, b);
     }
     const minArea = RIFT_MIN_CONTINENT_FRACTION * this.totalAreaKm2;
+    const superArea = SUPERCONTINENT_FRACTION * this.totalAreaKm2;
     const count = plates.length;
     for (let p = 0; p < count; p++) {
-      if (this.dead[p] || this.slowSteps[p] < RIFT_LOCK_STEPS) continue;
-      if (this.continentalArea(p) < minArea) continue;
-      if (this.eventRng.float() < RIFT_PROBABILITY * this.heat) this.rift(p);
+      if (this.dead[p]) continue;
+      const area = this.continentalArea(p);
+      if (area < minArea) continue;
+      if (this.slowSteps[p] < RIFT_LOCK_STEPS && area < superArea) continue;
+      if (this.eventRng.float() < RIFT_PROBABILITY * this.heat) {
+        this.rift(p, this.eventRng.float() < RIFT_FAIL_PROBABILITY);
+      }
     }
   }
 
@@ -341,16 +423,19 @@ export class TectonicsSim {
   }
 
   /**
-   * Split plate p along a great circle through its continental centroid,
-   * with a random strike. The parcels on one side become a new plate whose
-   * frame starts equal to the parent's, so nothing moves at the instant of
-   * the split; the two plates then receive opposite halves of a relative
-   * Euler vector whose pole sits just beyond one end of the continent, so
-   * the rift opens along its whole length (fastest at the far end), and the
-   * gap fills with thinned margins and then new sea floor. Returns the new
-   * plate id, or -1 when the plate has no continental crust.
+   * Split plate p along a rift through its continental centroid with a
+   * random strike: a great circle bent at the thousand-kilometer scale and
+   * offset by transform faults (riftpath.ts). The parcels on one side
+   * become a new plate whose frame starts equal to the parent's, so nothing
+   * moves at the instant of the split; the two plates then receive opposite
+   * halves of a relative Euler vector whose pole sits just beyond one end of
+   * the continent, so the rift opens along its whole length (fastest at the
+   * far end), and the gap fills with thinned margins and then new sea floor.
+   * A rift born to fail welds back after a few tens of steps (evolvePlates),
+   * leaving the gulf it opened. Returns the new plate id, or -1 when the
+   * plate has no continental crust.
    */
-  rift(p: number): number {
+  rift(p: number, fails = false): number {
     const pool = this.pool;
     const grid = this.grid;
     const xyz = grid.xyz;
@@ -379,11 +464,15 @@ export class TectonicsSim {
       if (Math.hypot(nx, ny, nz) > 0.2) break;
     }
     [nx, ny, nz] = normalize3(nx, ny, nz);
+    const path = makeRiftPath([nx, ny, nz], [ux, uy, uz], this.eventRng.fork(`rift-${this.events.length}`));
     // Extent of the continent along the circle, in the basis (u, w = n x u).
     const wx = ny * uz - nz * uy;
     const wy = nz * ux - nx * uz;
     const wz = nx * uy - ny * ux;
     let thetaMin = Infinity;
+    let thetaMax = -Infinity;
+    let dMin = Infinity;
+    let dMax = -Infinity;
     for (let i = 0; i < pool.count; i++) {
       if (!pool.alive[i] || pool.plate[i] !== p || pool.crustType[i] !== CONTINENTAL) continue;
       const k = pool.frameCell[i];
@@ -392,8 +481,18 @@ export class TectonicsSim {
       const z = xyz[3 * k + 2];
       const theta = Math.atan2(x * wx + y * wy + z * wz, x * ux + y * uy + z * uz);
       if (theta < thetaMin) thetaMin = theta;
+      if (theta > thetaMax) thetaMax = theta;
+      const d = x * nx + y * ny + z * nz;
+      if (d < dMin) dMin = d;
+      if (d > dMax) dMax = d;
     }
-    const phi = thetaMin - RIFT_POLE_MARGIN;
+    // The line runs parallel to the centroid's great circle, shifted so the split is uneven.
+    const shift = this.eventRng.range(-RIFT_OFFSET, RIFT_OFFSET) * 0.5 * (dMax - dMin);
+    // A rift that will fail hinges inside the continent: a gulf opens beyond the hinge and the
+    // crust on the near side is squeezed a little. A lasting rift hinges just beyond one end.
+    const phi = fails
+      ? thetaMin + this.eventRng.range(RIFT_FAIL_HINGE[0], RIFT_FAIL_HINGE[1]) * (thetaMax - thetaMin)
+      : thetaMin - RIFT_POLE_MARGIN;
     const px = Math.cos(phi) * ux + Math.sin(phi) * wx;
     const py = Math.cos(phi) * uy + Math.sin(phi) * wy;
     const pz = Math.cos(phi) * uz + Math.sin(phi) * wz;
@@ -414,7 +513,7 @@ export class TectonicsSim {
     for (let i = 0; i < pool.count; i++) {
       if (!pool.alive[i] || pool.plate[i] !== p) continue;
       const k = pool.frameCell[i];
-      if (xyz[3 * k] * nx + xyz[3 * k + 1] * ny + xyz[3 * k + 2] * nz <= 0) continue;
+      if (riftDistance(path, xyz[3 * k], xyz[3 * k + 1], xyz[3 * k + 2]) - shift <= 0) continue;
       parentIndex[k] = -1;
       childIndex[k] = i;
       pool.plate[i] = id;
@@ -445,6 +544,10 @@ export class TectonicsSim {
     setEulerVector(child, ex + 0.5 * ox, ey + 0.5 * oy, ez + 0.5 * oz);
     this.slowSteps[p] = 0;
     this.events.push({ step: this.step, type: 'rift', plate: id, other: p });
+    if (fails) {
+      const open = Math.round(this.eventRng.range(RIFT_FAIL_STEPS[0], RIFT_FAIL_STEPS[1]));
+      this.failingRifts.push({ child: id, parent: p, step: this.step + open });
+    }
     return id;
   }
 
@@ -591,7 +694,12 @@ export class TectonicsSim {
     const ca = pool.crustType[a] === CONTINENTAL && pool.thickness[a] >= BUOYANT_THICKNESS_KM;
     const cb = pool.crustType[b] === CONTINENTAL && pool.thickness[b] >= BUOYANT_THICKNESS_KM;
     if (ca !== cb) return ca ? a : b;
-    if (!ca && pool.age[a] !== pool.age[b]) return pool.age[a] < pool.age[b] ? a : b;
+    if (!ca) {
+      // An arc's thickened crust resists subduction: the taller volcanic pile overrides.
+      const dv = pool.volcanic[a] - pool.volcanic[b];
+      if (Math.abs(dv) >= ARC_OVERRIDE_KM) return dv > 0 ? a : b;
+      if (pool.age[a] !== pool.age[b]) return pool.age[a] < pool.age[b] ? a : b;
+    }
     return pool.plate[a] < pool.plate[b] ? a : b;
   }
 
@@ -645,17 +753,21 @@ export class TectonicsSim {
   private consume(winner: number, loser: number): void {
     const pool = this.pool;
     if (pool.crustType[loser] === CONTINENTAL) {
-      // Crustal shortening: the consumed column thickens the suture cell and its
+      // Crustal shortening. The stretched margins on both sides are the first to be
+      // stacked back to full thickness (basin inversion: the seaway between two
+      // colliding continents closes); what is left thickens the suture cell and its
       // continental neighbors on the overriding plate (a fold-and-thrust belt).
       const grid = this.grid;
       const index = pool.frameIndex[pool.plate[winner]];
       const k = pool.frameCell[winner];
+      let mass = pool.thickness[loser];
+      mass = this.invertMargins(index, k, mass);
+      mass = this.invertMargins(pool.frameIndex[pool.plate[loser]], pool.frameCell[loser], mass);
       let count = 0;
       for (let t = grid.nbStart[k]; t < grid.nbStart[k + 1]; t++) {
         const id = index[grid.nb[t]];
         if (id >= 0 && pool.alive[id] && pool.crustType[id] === CONTINENTAL) count++;
       }
-      const mass = pool.thickness[loser];
       const toNeighbors = count > 0 ? 0.6 * mass : 0;
       pool.thickness[winner] += mass - toNeighbors;
       if (count > 0) {
@@ -673,13 +785,45 @@ export class TectonicsSim {
       pool.sediment[winner] = Math.min(SEDIMENT_CAP_KM, pool.sediment[winner] + pool.sediment[loser]);
       this.spreadExcess(winner);
       // Continental collision resists: both plates slow down (India after hitting Eurasia); applied per step.
+      this.tally.collisions++;
       this.collisionCells[pool.plate[winner]]++;
       this.collisionCells[pool.plate[loser]]++;
     } else {
+      this.tally.subductions++;
       this.addArc(winner);
+      this.shortenMargin(winner);
       pool.sediment[winner] = Math.min(SEDIMENT_CAP_KM, pool.sediment[winner] + 0.5 * pool.sediment[loser]);
     }
     pool.release(loser);
+  }
+
+  /**
+   * Spend `mass` km of consumed crust restoring the continental frame
+   * neighbors of cell k (on the plate with this frame index) that are thinner
+   * than standard crust, thinnest first. Returns what is left.
+   */
+  private invertMargins(index: Int32Array, k: number, mass: number): number {
+    const pool = this.pool;
+    const grid = this.grid;
+    for (let pass = 0; pass < 2 && mass > 1e-9; pass++) {
+      // Two passes: the thinnest cell first, then whatever still falls short.
+      let thinnest = -1;
+      let thin = CONTINENTAL_THICKNESS_KM;
+      for (let t = grid.nbStart[k]; t < grid.nbStart[k + 1]; t++) {
+        const id = index[grid.nb[t]];
+        if (id < 0 || !pool.alive[id] || pool.crustType[id] !== CONTINENTAL) continue;
+        if (pool.thickness[id] < thin) {
+          thin = pool.thickness[id];
+          thinnest = id;
+        }
+      }
+      if (thinnest < 0) break;
+      const fill = Math.min(mass, CONTINENTAL_THICKNESS_KM - thin);
+      pool.thickness[thinnest] += fill;
+      pool.orogenyStep[thinnest] = this.step;
+      mass -= fill;
+    }
+    return mass;
   }
 
   /**
@@ -724,6 +868,55 @@ export class TectonicsSim {
     }
   }
 
+  /**
+   * Andean orogeny: the continental crust of the overriding plate within
+   * ANDEAN_RADIUS of the trench shortens and thickens a little with every
+   * parcel subducted beneath it (shared among the cells found), whether the
+   * trench sits on the continent itself or on the strip of sea floor it
+   * carries.
+   */
+  private shortenMargin(w: number): void {
+    const pool = this.pool;
+    const grid = this.grid;
+    const index = pool.frameIndex[pool.plate[w]];
+    const stamp = ++this.stampCounter;
+    const st = this.stamp;
+    const q = this.arcQueue;
+    const dist = this.arcDist;
+    let head = 0;
+    let tail = 0;
+    q[tail] = pool.frameCell[w];
+    dist[tail++] = 0;
+    st[pool.frameCell[w]] = stamp;
+    let found = 0;
+    while (head < tail) {
+      const k = q[head];
+      const d = dist[head++];
+      const id = index[k];
+      if (id >= 0 && pool.alive[id] && pool.crustType[id] === CONTINENTAL) {
+        this.andeanFound[found++] = id;
+        if (found >= this.andeanFound.length) break;
+      }
+      if (d >= ANDEAN_RADIUS) continue;
+      for (let t = grid.nbStart[k]; t < grid.nbStart[k + 1]; t++) {
+        const nb = grid.nb[t];
+        if (st[nb] === stamp || tail >= q.length) continue;
+        st[nb] = stamp;
+        q[tail] = nb;
+        dist[tail++] = d + 1;
+      }
+    }
+    if (found === 0) return;
+    const share = ANDEAN_SHORTENING_KM / found;
+    this.tally.andeanKm += ANDEAN_SHORTENING_KM;
+    for (let f = 0; f < found; f++) {
+      const id = this.andeanFound[f];
+      pool.thickness[id] += share;
+      pool.orogenyStep[id] = this.step;
+      this.spreadExcess(id);
+    }
+  }
+
   /** Volcanic arc: thicken the overriding plate's frame cells within ARC_RADIUS of the boundary cell. */
   private addArc(w: number): void {
     const pool = this.pool;
@@ -742,7 +935,10 @@ export class TectonicsSim {
       const k = q[head];
       const d = dist[head++];
       const id = index[k];
-      if (id >= 0 && pool.alive[id] && pool.volcanic[id] < VOLCANIC_CAP_KM) pool.volcanic[id] += ARC_RATE_KM;
+      if (id >= 0 && pool.alive[id] && pool.volcanic[id] < VOLCANIC_CAP_KM) {
+        pool.volcanic[id] += ARC_RATE_KM;
+        if (pool.crustType[id] === OCEANIC && pool.volcanic[id] >= ARC_ACCRETION_KM) this.accreteArc(id);
+      }
       if (d >= ARC_RADIUS) continue;
       for (let t = grid.nbStart[k]; t < grid.nbStart[k + 1]; t++) {
         const nb = grid.nb[t];
@@ -752,6 +948,23 @@ export class TectonicsSim {
         dist[tail++] = d + 1;
       }
     }
+  }
+
+  /**
+   * An island arc has grown on oceanic crust: the pile becomes buoyant
+   * continental crust of the thickness that keeps its surface where it is
+   * (Japan, the Philippines, Central America), so it accretes to whatever it
+   * meets instead of subducting. Volume is not conserved here on purpose: arc
+   * magmas come from the mantle.
+   */
+  private accreteArc(id: number): void {
+    const pool = this.pool;
+    const surface = crustElevation(OCEANIC, OCEANIC_THICKNESS_KM, pool.age[id], pool.volcanic[id], 0);
+    const thickness = CONTINENTAL_THICKNESS_KM + (surface - CONTINENTAL_BASE_M) / ISOSTASY_M_PER_KM;
+    pool.setContinental(id, Math.min(this.cap, Math.max(BUOYANT_THICKNESS_KM, thickness)));
+    pool.volcanic[id] = 0;
+    pool.orogenyStep[id] = this.step;
+    this.tally.accretions++;
   }
 
   /** Unclaimed world cells: resampling holes get the plate still covering them; true gaps get new oceanic crust. */
@@ -910,7 +1123,7 @@ export class TectonicsSim {
     for (let j = 0; j < this.grid.n; j++) {
       const i = claim[j];
       let e = crustElevation(pool.crustType[i], pool.thickness[i], pool.age[i], pool.volcanic[i], pool.sediment[i]);
-      if (boundary[j] === BOUNDARY_SUBDUCTING) e -= TRENCH_M;
+      if (boundary[j] === BOUNDARY_SUBDUCTING) e -= convergentDepression(pool.crustType[i], pool.thickness[i]);
       elevation[j] = e;
     }
     // Either the water inventory sets the sea level, or a target ocean cover does and the inventory follows.
@@ -969,20 +1182,31 @@ export class TectonicsSim {
     this.enforceCap();
   }
 
-  /** Hard cap on every parcel, visible or not, repeated until the excess has flowed outward. */
+  /**
+   * Hard cap on every parcel, visible or not. A worklist follows the excess
+   * outward until no parcel stands more than half a kilometer over the cap:
+   * a large plateau fed by a long collision needs many more rings than a
+   * fixed number of sweeps would allow.
+   */
   private enforceCap(): void {
     const pool = this.pool;
-    for (let pass = 0; pass < 40; pass++) {
-      let worst = 0;
-      for (let i = 0; i < pool.count; i++) {
-        if (!pool.alive[i] || pool.crustType[i] !== CONTINENTAL) continue;
-        const over = pool.thickness[i] - this.cap;
-        if (over > 0) {
-          if (over > worst) worst = over;
-          this.spreadExcess(i);
-        }
+    const grid = this.grid;
+    const limit = this.cap + 0.5;
+    const work: number[] = [];
+    for (let i = 0; i < pool.count; i++) {
+      if (pool.alive[i] && pool.crustType[i] === CONTINENTAL && pool.thickness[i] > limit) work.push(i);
+    }
+    let budget = 50 * pool.count;
+    while (work.length > 0 && budget-- > 0) {
+      const i = work.pop() as number;
+      if (!pool.alive[i] || pool.thickness[i] <= limit) continue;
+      this.spreadExcess(i);
+      const index = pool.frameIndex[pool.plate[i]];
+      const k = pool.frameCell[i];
+      for (let t = grid.nbStart[k]; t < grid.nbStart[k + 1]; t++) {
+        const id = index[grid.nb[t]];
+        if (id >= 0 && pool.alive[id] && pool.crustType[id] === CONTINENTAL && pool.thickness[id] > limit) work.push(id);
       }
-      if (worst < 1) break;
     }
   }
 

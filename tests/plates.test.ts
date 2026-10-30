@@ -34,7 +34,8 @@ describe('plate births and deaths', () => {
     expect(sim.plates.length).toBe(EARTH.plateCount + 1);
     expect(sim.continentalVolume()).toBeCloseTo(before, 6);
     sim.run(15);
-    expect(sim.activePlates()).toBe(EARTH.plateCount + 1);
+    // Other rifts may follow in those steps (a supercontinent rifts whether it moves or not).
+    expect(sim.activePlates()).toBeGreaterThanOrEqual(EARTH.plateCount + 1);
     // Both halves kept continental crust, and the contact between them opened.
     expect(sim.continentalArea(child)).toBeGreaterThan(0.1 * childArea);
     expect(sim.continentalArea(parent)).toBeGreaterThan(0.1 * childArea);
@@ -51,7 +52,7 @@ describe('plate births and deaths', () => {
     }
     expect(contact).toBeGreaterThan(5);
     expect(divergent / contact).toBeGreaterThan(0.5);
-    expect(sim.events).toEqual([{ step: 0, type: 'rift', plate: child, other: parent }]);
+    expect(sim.events[0]).toEqual({ step: 0, type: 'rift', plate: child, other: parent });
     expect((sim.continentalVolume() + sim.erodedContinental) / before).toBeGreaterThan(0.97);
   });
 

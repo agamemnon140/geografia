@@ -45,7 +45,7 @@ describe('build', () => {
   });
 
   it('changes with the seed', () => {
-    const other = build({ ...QUICK, seed: 2 });
+    const other = build({ ...QUICK, seed: QUICK.seed + 1 });
     expect(sameBytes(world.elevation, other.elevation)).toBe(false);
   });
 
@@ -58,7 +58,7 @@ describe('build', () => {
       expect(Number.isFinite(world.elevation[i])).toBe(true);
       expect(Number.isFinite(world.thickness[i])).toBe(true);
       expect(world.plate[i]).toBeGreaterThanOrEqual(0);
-      expect(world.plate[i]).toBeLessThan(EARTH.plateCount);
+      expect(world.plate[i]).toBeLessThan(world.plates.length);
     }
     expect(Number.isFinite(world.seaLevel)).toBe(true);
   });

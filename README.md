@@ -43,6 +43,12 @@ currents, sstAnomaly, plates, crustAge, thickness, cells.
   climates shift, with every layer and the explain drawer available at each
   step. Export history writes the keyframes of the current layer as one PNG
   strip.
+- Every planet starts as one supercontinent with a first rift already open
+  and earns its shapes from what follows: slab pull steers the plates,
+  rifts split continents unevenly (some fail and leave gulfs), collisions
+  close the seaways between welded continents, island arcs grow into land
+  and accrete, active margins thicken into cordilleras. The events are
+  listed under the statistics.
 - Three views in the bar above the stage: Map (wheel zooms around the
   cursor, drag pans with wrap-around, double-click resets), Globe (drag to
   turn, click to inspect; software-rendered, no WebGL) and Compare (A

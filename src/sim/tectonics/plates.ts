@@ -37,7 +37,8 @@ export function perturbPlates(plates: Plate[], rng: Rng, cellAngle: number, spee
   const typical = cellAngle * 0.3 * speed;
   for (const p of plates) {
     const [dx, dy, dz] = randomUnit(rng);
-    p.axis = normalize3(p.axis[0] + 0.25 * dx, p.axis[1] + 0.25 * dy, p.axis[2] + 0.25 * dz);
+    // A smaller kick than before M13: slab pull now steers plates, the walk only adds variety.
+    p.axis = normalize3(p.axis[0] + 0.15 * dx, p.axis[1] + 0.15 * dy, p.axis[2] + 0.15 * dz);
     // Relaxation toward the typical speed stands for slab pull from subduction elsewhere; it has to
     // beat the collision brake except along long sutures, or every plate ends up locked.
     const walked = p.rate * rng.range(0.85, 1.15);

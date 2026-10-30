@@ -13,13 +13,15 @@ export const OCEANIC_THICKNESS_KM = 7;
 /** Typical continental crust thickness. */
 export const CONTINENTAL_THICKNESS_KM = 35;
 /**
- * Surface height of 35 km continental crust in the model's reference frame;
- * sea level is solved separately and comes out near -1100 m for Earth's
- * water, so standard crust stands about 900 m above the sea, as Earth's
- * old cratons do. (Was 500 while the start was noise blobs with wide
- * thinned margins; the rifted start keeps more crust at full thickness.)
+ * Surface height of 35 km continental crust in the model's reference frame,
+ * whose zero is Earth's: ridge crests at -2500 m, old sea floor near -5500 m,
+ * so standard crust is 2500 m above the ridge crest. Sea level is solved
+ * separately from the water volume and comes out a few hundred meters below
+ * zero (the model's sea floor is a little older than Earth's), which leaves
+ * standard crust 300 to 600 m above the sea, where Earth's cratons stand,
+ * and floods the deeper interior basins into inland seas.
  */
-export const CONTINENTAL_BASE_M = -200;
+export const CONTINENTAL_BASE_M = 250;
 /** Airy isostasy: (rho_mantle - rho_crust) / rho_mantle with 3300 and 2800 kg/m^3 gives ~0.15 m of surface per m of root, i.e. 150 m per km. */
 export const ISOSTASY_M_PER_KM = 150;
 /** Depth of a mid-ocean ridge crest. */
@@ -36,10 +38,10 @@ export const ADDED_M_PER_KM = 600;
 export const ADDED_CONTINENTAL_M_PER_KM = 300;
 /** Sediment is light and loads a basin that subsides under it: little surface rise per km. */
 export const SEDIMENT_M_PER_KM = 200;
-/** Passive margins are stretched: continental thickness one to four cells from the ocean at the start (slope and shelf); about a quarter of the continental crust starts flooded, as on Earth. */
-export const MARGIN_THICKNESS_KM = [16, 20, 26, 30];
 /** Trench depression on the subducting side of a convergent boundary. */
 export const TRENCH_M = 2500;
+/** Where buoyant continental crust underthrusts another continent there is no trench, only a foreland basin. */
+export const FORELAND_M = 600;
 /** Thickest crust the lithosphere holds on Earth (Tibet); scales with 1/g. */
 export const THICKNESS_CAP_EARTH_KM = 70;
 /** Fraction of height above sea level removed per step by erosion. */
@@ -52,10 +54,22 @@ export const FLOW_THRESHOLD_KM = 45;
 export const FLOW_RATE = 0.1;
 /** Crustal flow above this, in km per step, stamps the receiving cell with the current orogeny step. */
 export const FLOW_STAMP_KM = 0.05;
-/** Volcanic thickening per subduction event on each cell of the arc. */
-export const ARC_RATE_KM = 0.01;
-/** Arc width in cells around the overriding boundary cell. */
-export const ARC_RADIUS = 2;
+/**
+ * Volcanic thickening per subduction event on each cell of the arc. With a
+ * one-cell radius and a plate consumed at 0.3 cells per step, an arc cell
+ * receives about two events per step: 0.2 km per step, 20 km^3 per km of
+ * arc per Myr, the low end of Earth's arc magmatic flux (30 to 90).
+ */
+export const ARC_RATE_KM = 0.15;
+/** Arc width in cells around the overriding boundary cell (arcs are 100 to 300 km wide). */
+export const ARC_RADIUS = 1;
+/** Between two oceanic parcels, the one carrying this much more volcanic rock overrides (thickened arc crust resists subduction), so an arc keeps its polarity once it starts. */
+export const ARC_OVERRIDE_KM = 1;
+/** An oceanic parcel carrying this much arc volcanism has become an island arc: buoyant continental crust that accretes instead of subducting. */
+export const ARC_ACCRETION_KM = 8;
+/** Shortening of a continental margin per oceanic parcel subducted beneath it (Andean orogeny: the Andes owe their 70 km crust to compression more than to magma), shared by the continental cells within ANDEAN_RADIUS of the trench. */
+export const ANDEAN_SHORTENING_KM = 0.5;
+export const ANDEAN_RADIUS = 2;
 /** Volcanic thickening per step on the cell above a hotspot. */
 export const HOTSPOT_RATE_KM = 3;
 /** Volcanic edifices stop growing past this (lithospheric flexure; a 10 km pile on the sea floor is a Hawaii-sized island). */
@@ -71,7 +85,7 @@ export const COLLISION_BRAKE = 0.97;
 /** Collision cells per step at which the brake saturates; shorter sutures brake proportionally less. */
 export const COLLISION_SATURATION_CELLS = 10;
 export const HOTSPOT_COUNT = 8;
-/** Fraction of the surface seeded as continental crust (Earth: ~40%, of which a quarter is flooded shelf and slope). */
+/** Fraction of the surface seeded as continental crust (Earth: about 40% counting every shelf and slope). Island arcs add about 2% more over 200 steps. A compact supercontinent floods only 5 to 6% of the surface where Earth's dissected continents flood 11%, so these planets carry 32 to 34% of land against Earth's 29%; lowering the fraction does not help, because the sea falls with it (DESIGN 3.3, M13). */
 export const CONTINENTAL_FRACTION = 0.4;
 /** Steps between random walks of the Euler poles. */
 export const POLE_WALK_INTERVAL = 20;
@@ -84,11 +98,32 @@ export const RIFT_LOCK_STEPS = 20;
 /** Continental area a plate needs before it can rift, as a fraction of the planet's surface (Earth: Africa is 6%). */
 export const RIFT_MIN_CONTINENT_FRACTION = 0.04;
 /** Probability per check that an eligible plate rifts, at Earth's mantle heat. */
-export const RIFT_PROBABILITY = 0.25;
+export const RIFT_PROBABILITY = 0.15;
+/** A rift runs parallel to a line through the continent's centroid, shifted by up to this share of the continent's half-extent: splits are uneven, as Madagascar, India or Greenland were. */
+export const RIFT_OFFSET = 0.6;
+/** A failing rift hinges inside the continent, this far along its extent (range): it opens a gulf at one end and closes it at the other. */
+export const RIFT_FAIL_HINGE: [number, number] = [0.3, 0.6];
+/** A plate carrying this share of the planet's surface as continental crust rifts whether locked or not: a supercontinent insulates the mantle beneath it. */
+export const SUPERCONTINENT_FRACTION = 0.14;
+/** Share of rifts that fail (aulacogens): the young ocean stops opening and the two sides weld again, leaving a gulf. */
+export const RIFT_FAIL_PROBABILITY = 0.4;
+/** Steps a failing rift stays open before it welds (range). */
+export const RIFT_FAIL_STEPS: [number, number] = [10, 30];
 /** Relative opening rate across a new rift at its far end, in cells per step. */
 export const RIFT_RATE_CELLS = 0.3;
 /** Angular margin between the end of the continent and the relative pole of a rift, radians (about 10 degrees). */
 export const RIFT_POLE_MARGIN = 0.17;
+/**
+ * Slab pull (DESIGN 3.3, M13): a plate whose oceanic edge subducts is pulled
+ * toward that trench, the dominant plate-driving force on Earth. Its Euler
+ * vector relaxes at this rate per step toward the vector that moves its
+ * subducting cells into the trench, at this speed in cells per step once the
+ * trench is this many cells long. Buoyant continental crust being
+ * underthrust pulls nothing (India slowed when its ocean was gone).
+ */
+export const SLAB_PULL_RATE = 0.03;
+export const SLAB_PULL_SPEED_CELLS = 0.35;
+export const SLAB_PULL_SATURATION_CELLS = 30;
 /** Locked steps before a plate welded to a neighbor along a continental suture merges into it. */
 export const MERGE_LOCK_STEPS = 40;
 /** Minimum continental suture length, in cells, for a merger. */
@@ -106,6 +141,11 @@ export const FLUVIAL_INTERVAL = 5;
 export const FLUVIAL_K = 1500;
 /** A fluvial pass never removes more than this fraction of the drop to the downstream cell (explicit-scheme stability). */
 export const FLUVIAL_MAX_DROP_FRACTION = 0.5;
+
+/** Depression at a convergent boundary on the underthrusting side: a trench, unless the crust there is buoyant continental crust (a collision), where a foreland basin forms instead. */
+export function convergentDepression(type: number, thickness: number): number {
+  return type === CONTINENTAL && thickness >= BUOYANT_THICKNESS_KM ? FORELAND_M : TRENCH_M;
+}
 
 /** Surface elevation (m, model frame) of a crust parcel before trench and sea-level effects. */
 export function crustElevation(type: number, thickness: number, age: number, volcanic: number, sediment: number): number {

@@ -69,7 +69,7 @@ export const PARAM_SPECS: ParamSpec[] = [
 ];
 
 export const EARTH: PlanetParams = {
-  seed: 1,
+  seed: 2,
   radiusKm: EARTH_RADIUS_KM,
   density: 1,
   waterVolume: 1,

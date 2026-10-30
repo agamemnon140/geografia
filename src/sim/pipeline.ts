@@ -11,7 +11,7 @@ import { solveSeaLevel, waterVolumeBelow } from './hypsometry.ts';
 import { validateParams, waterVolumeKm3, type PlanetParams } from './params.ts';
 import { Rng } from './rng/xoshiro.ts';
 import { computeStats, type WorldStats } from './stats.ts';
-import { SEDIMENT_M_PER_KM, TRENCH_M, crustElevation, volcanicFactor } from './tectonics/crust.ts';
+import { SEDIMENT_M_PER_KM, convergentDepression, crustElevation, volcanicFactor } from './tectonics/crust.ts';
 import { BOUNDARY_SUBDUCTING, TectonicsSim, type TectonicEvent } from './tectonics/simulation.ts';
 
 import type { FloatArray } from './types.ts';
@@ -287,7 +287,7 @@ export function finalize(ctx: BuildContext, state: ReliefState, onProgress: Prog
     elevationCrust[j] = crustElevation(state.crustType[j], state.thickness[j], state.crustAge[j], 0, 0);
     elevationVolcanic[j] = state.volcanic[j] * volcanicFactor(state.crustType[j]);
     elevationSediment[j] = state.sediment[j] * SEDIMENT_M_PER_KM;
-    elevationTrench[j] = state.boundary[j] === BOUNDARY_SUBDUCTING ? -TRENCH_M : 0;
+    elevationTrench[j] = state.boundary[j] === BOUNDARY_SUBDUCTING ? -convergentDepression(state.crustType[j], state.thickness[j]) : 0;
     const p = state.plate[j];
     if (!seen[p]) {
       seen[p] = 1;
