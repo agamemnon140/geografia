@@ -155,19 +155,20 @@ const SEA_ICE: RGB = [215, 232, 245];
 
 /**
  * Koppen colors by family, indexed like KOPPEN_NAMES: one hue per main
- * group (A blues, B reds and oranges, C greens, D purples, E grays), the
- * second and third letters as lightness steps, lighter when drier or
- * colder. The textbook palette of Peel et al. (2007) spreads thirty
- * saturated hues that blur at this scale; here a glance gives the group and
- * the legend or the inspector gives the subtype.
+ * group (A deep forest greens, B reds and oranges, C yellow-greens and
+ * olives, D purples, E grays), the second and third letters as lightness
+ * steps, lighter when drier or colder. Blue is kept for water. The
+ * textbook palette of Peel et al. (2007) spreads thirty saturated hues
+ * that blur at this scale; here a glance gives the group and the legend or
+ * the inspector gives the subtype.
  */
 export const KOPPEN_COLORS: RGB[] = [
   [70, 82, 100],
-  [25, 70, 190], [60, 125, 225], [125, 180, 240],
+  [0, 88, 40], [20, 130, 60], [75, 168, 85],
   [215, 45, 35], [235, 135, 120], [235, 145, 35], [245, 205, 120],
-  [165, 165, 45], [195, 195, 85], [220, 225, 140],
-  [55, 145, 60], [95, 175, 95], [150, 205, 140],
-  [15, 110, 45], [45, 150, 75], [105, 190, 120],
+  [175, 168, 40], [200, 195, 85], [222, 218, 140],
+  [120, 160, 35], [155, 185, 70], [190, 210, 120],
+  [140, 180, 55], [170, 200, 90], [200, 220, 135],
   [140, 55, 150], [165, 95, 175], [190, 135, 200], [215, 175, 225],
   [105, 50, 165], [135, 90, 195], [165, 130, 215], [195, 170, 235],
   [75, 45, 145], [105, 85, 175], [140, 125, 200], [175, 165, 225],
@@ -247,12 +248,12 @@ export const LAYERS: Layer[] = [
     legend: {
       kind: 'categories',
       items: [
-        { color: KOPPEN_COLORS[2], label: 'A tropical, blues: Af dark, Am, Aw light' },
+        { color: KOPPEN_COLORS[2], label: 'A tropical, deep greens: Af darkest, Am, Aw lightest' },
         { color: KOPPEN_COLORS[4], label: 'B arid: BWh red, BWk pink, BSh orange, BSk sand' },
-        { color: KOPPEN_COLORS[15], label: 'C temperate, greens: Cs olive, Cw mid, Cf deep; lighter when cooler' },
+        { color: KOPPEN_COLORS[14], label: 'C temperate, yellow-greens: Cf, Cw, Cs olive; lighter when cooler' },
         { color: KOPPEN_COLORS[26], label: 'D continental, purples: Ds, Dw, Df; lighter when colder' },
         { color: KOPPEN_COLORS[29], label: 'E polar: ET tundra gray, EF ice cap white' },
-        { color: KOPPEN_SEA, label: 'sea, muted so the land stands out' },
+        { color: KOPPEN_SEA, label: 'sea (blue is kept for water)' },
       ],
     },
     relief: 'light',
