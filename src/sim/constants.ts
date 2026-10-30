@@ -9,6 +9,12 @@ export const EARTH_RADIUS_KM = 6371.0088;
 /** Earth ocean volume (NOAA ETOPO1 estimate, 1.335e9 km^3). */
 export const EARTH_OCEAN_VOLUME_KM3 = 1.335e9;
 
+/** Water locked in Earth's present ice sheets (Antarctica and Greenland), km^3. */
+export const EARTH_ICE_VOLUME_KM3 = 2.9e7;
+
+/** Earth's surface water inventory: ocean plus ice sheets. The simulator locks part of it in ice from the climate. */
+export const EARTH_WATER_VOLUME_KM3 = EARTH_OCEAN_VOLUME_KM3 + EARTH_ICE_VOLUME_KM3;
+
 /** Earth surface area for the mean radius. */
 export const EARTH_SURFACE_KM2 = 4 * Math.PI * EARTH_RADIUS_KM * EARTH_RADIUS_KM;
 

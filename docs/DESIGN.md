@@ -121,6 +121,15 @@ Mechanisms as built in M5 (`climate/ocean.ts`, `climate/moisture.ts`, `climate/m
 - Moisture is a steady-state column of water vapor per sample: evaporation from open water of 1200 mm per year at 18 degrees C rising 6.5% per degree (Clausius-Clapeyron); first-order upwind transport along the sample's wind plus an eddy diffusivity of 1.5e6 m^2/s standing for the storm tracks; rainout at one over 9 days, faster in cold air, plus the fraction of the column condensed per meter of lift (scale height 2,500 m) where the wind climbs, plus 0.4 s times the wind convergence. Land re-evaporates 60% of its rain (Earth's recycling ratio), folded into the land sink so one linear solve is exact; the discrete fluxes are area-weighted so precipitation equals evaporation over the planet to the solver tolerance. The orographic and convergence shares are stored per cell for the explain mode. Same multilevel solve as the currents.
 - The final rivers use this precipitation, and lake evaporation uses the same open-water formula at the cell's annual temperature.
 
+Mechanisms as built in M6 (`climate/ice.ts`, `climate/koppen.ts`):
+
+- Sea ice in every sample whose surface temperature is below -1.8 degrees C; an ice sheet where the warmest sample of a land cell stays below zero, altitude included. One albedo pass cools iced cells by up to 4 degrees and recomputes the extent. Ice sheets lock 2 km of water per cell; the final sea level is solved from the inventory minus that volume, so the water parameter is now ocean plus ice (Earth 1.364e9 km^3) and a cold planet gets a lower coastline by itself. The glacial-phase parameter cools the global mean by 6 degrees at 1, and everything else (ice, sea level, biomes) follows.
+- Over the ocean the annual temperature responds to insolation at 0.14 degrees per W/m^2 instead of 0.17 on land, standing for the ocean's own poleward heat transport; without it the polar seas froze over far beyond Earth's.
+- Koppen-Geiger from the 12 samples (Peel et al. 2007 thresholds), with the summer half-year by hemisphere. Statistics add landmass counts (continents at or above one million km^2), ice fractions and Koppen group shares.
+- Explain mode stores the components the inspector itemizes: elevation as crust + volcanic + sediment + trench, temperature as global mean + insolation + altitude + continentality + currents + ice albedo, precipitation as advected + orographic + convergence.
+
+Calibration status after M6 (Earth preset, seed 1): ice sheets on 11% of the land (Earth 10%), Koppen A 10 / B 26 / C 12 / D 21 / E 32% of the land (Earth 19 / 30 / 14 / 25 / 13; the surplus of E comes from large polar continents in this seed and the lapse rate on plateaus), seven continents and 24 islands. The glacial phase at 1 roughly triples the ice volume and drops the sea by about a hundred meters. A level-5 preview of Earth builds in 0.8 s, the full planet in about 3.5 s.
+
 Calibration status after M5 (Earth preset, seed 1): global precipitation 1,100 mm per year (Earth about 1,000), land 740 (Earth 750 to 800), desert 17% of the land (Earth 20 to 25% below 250 mm); zonal land means of 2,600 at 0 to 10 degrees, 350 at 20 to 30, 610 at 40 to 50 and 250 at the poles (Earth about 2,000, 350, 650, 150). Gyre transport 8 Sv (Earth 30 to 50; the annual-mean wind stress is the weak link), boundary currents 0.2 m/s spread over 275 km, coastal anomalies of a few degrees. Climate stage 1.2 s, whole build 3.4 s.
 
 ### 3.6 Statistics per world
@@ -223,7 +232,7 @@ The UI exists to expose causality, not to decorate. Every number on screen has a
 | M3 | Rivers and lakes layer, discharge in the inspector |
 | M4 | Temperature and wind layers with a month slider; circulation cell count in statistics |
 | M5 | Precipitation and ocean current layers; the final rivers |
-| M6 | Ice and Koppen layers, glacial phase, gallery with statistics, explain drawer with itemized components, parameters in the URL for sharing, PNG and JSON export |
+| M6 | Ice and Koppen layers, glacial phase, gallery with statistics, explain drawer with itemized components, parameters in the URL for sharing, PNG and JSON export, automatic coarse preview on parameter change |
 
 ### 8.3 Rules
 

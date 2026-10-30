@@ -49,6 +49,13 @@ export class MapView {
     this.draw();
   }
 
+  /** The current map as a PNG blob. */
+  toPng(): Promise<Blob> {
+    return new Promise((resolve, reject) => {
+      this.canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error('PNG export failed'))), 'image/png');
+    });
+  }
+
   select(cell: number): void {
     this.selected = cell;
     this.draw();

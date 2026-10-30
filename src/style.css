@@ -175,3 +175,78 @@ table.stats td:last-child {
   cursor: crosshair;
   image-rendering: auto;
 }
+
+.center {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  height: 100vh;
+}
+
+.center .map {
+  flex: 1;
+  min-height: 0;
+}
+
+.center .map canvas {
+  max-height: calc(100vh - 32px - 150px);
+}
+
+.gallery {
+  display: flex;
+  gap: 8px;
+  padding: 0 16px 12px;
+  overflow-x: auto;
+  min-height: 150px;
+}
+
+.gallery:empty {
+  display: none;
+}
+
+.gallery-item {
+  flex: 0 0 auto;
+  width: 240px;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--panel);
+  overflow: hidden;
+}
+
+.gallery-item:hover {
+  border-color: var(--accent);
+}
+
+.gallery-item canvas {
+  display: block;
+  width: 240px;
+  height: 120px;
+}
+
+.gallery-caption {
+  font-size: 11px;
+  color: var(--muted);
+  padding: 4px 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.check {
+  font-size: 12px;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.inspector .section {
+  margin-bottom: 8px;
+}
+
+.inspector .section-title {
+  color: var(--text);
+  font-weight: 600;
+  margin-bottom: 2px;
+}

@@ -2,10 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { cellAreasKm2, Grid } from '../src/sim/grid/grid.ts';
 import { oceanFraction } from '../src/sim/hypsometry.ts';
 import { EARTH, PRESETS, validateParams } from '../src/sim/params.ts';
-import { build } from '../src/sim/pipeline.ts';
+import { build, worldBuffers } from '../src/sim/pipeline.ts';
 
-function sameBytes(a: Float64Array, b: Float64Array): boolean {
-  if (a.length !== b.length) return false;
+function sameBytes(a: ArrayBufferView, b: ArrayBufferView): boolean {
+  if (a.byteLength !== b.byteLength) return false;
   const ua = new Uint8Array(a.buffer, a.byteOffset, a.byteLength);
   const ub = new Uint8Array(b.buffer, b.byteOffset, b.byteLength);
   for (let i = 0; i < ua.length; i++) if (ua[i] !== ub[i]) return false;
@@ -18,12 +18,28 @@ const QUICK = { ...EARTH, tectonicAge: 50 };
 describe('build', () => {
   const world = build(QUICK);
 
-  it('is byte-for-byte deterministic for the same params and seed', () => {
+  it('is byte-for-byte deterministic for the same params and seed, in every field', () => {
     const again = build(QUICK);
-    expect(sameBytes(world.elevation, again.elevation)).toBe(true);
-    expect(sameBytes(world.thickness, again.thickness)).toBe(true);
+    const a = worldBuffers(world);
+    const b = worldBuffers(again);
+    expect(a.length).toBe(b.length);
+    for (let k = 0; k < a.length; k++) expect(sameBytes(new Uint8Array(a[k]), new Uint8Array(b[k]))).toBe(true);
     expect(again.seaLevel).toBe(world.seaLevel);
+    expect(again.iceVolumeKm3).toBe(world.iceVolumeKm3);
     expect(again.stats).toEqual(world.stats);
+    expect(again.lakes).toEqual(world.lakes);
+    expect(again.basins).toEqual(world.basins);
+  });
+
+  it('previews one level coarser in under two seconds', () => {
+    const t0 = performance.now();
+    const preview = build(EARTH, () => {}, { coarser: 1 });
+    const seconds = (performance.now() - t0) / 1000;
+    expect(preview.preview).toBe(true);
+    expect(preview.level).toBe(5);
+    expect(preview.n).toBe(10242);
+    expect(seconds).toBeLessThan(2);
+    for (let i = 0; i < preview.n; i++) expect(Number.isFinite(preview.temperatureAnnual[i])).toBe(true);
   });
 
   it('changes with the seed', () => {

@@ -1,4 +1,4 @@
-import { EARTH_OCEAN_VOLUME_KM3, EARTH_RADIUS_KM } from './constants.ts';
+import { EARTH_RADIUS_KM, EARTH_WATER_VOLUME_KM3 } from './constants.ts';
 
 /** The physical core parameters (DESIGN section 4). Every one has a causal path to the output. */
 export interface PlanetParams {
@@ -38,7 +38,7 @@ export interface ParamSpec {
 }
 
 /** Milestone currently implemented; parameters wired in later milestones are shown disabled. */
-export const CURRENT_MILESTONE = 5;
+export const CURRENT_MILESTONE = 6;
 
 export const PARAM_SPECS: ParamSpec[] = [
   { key: 'seed', label: 'Seed', min: 0, max: 4294967295, step: 1, unit: '', wiredIn: 1, help: 'All randomness' },
@@ -98,8 +98,8 @@ export function relativeGravity(p: PlanetParams): number {
   return p.density * (p.radiusKm / EARTH_RADIUS_KM);
 }
 
-/** Absolute water volume in km^3: the relative inventory scaled by surface area. */
+/** Absolute water inventory in km^3 (ocean plus ice): the relative inventory scaled by surface area. */
 export function waterVolumeKm3(p: PlanetParams): number {
   const ratio = p.radiusKm / EARTH_RADIUS_KM;
-  return p.waterVolume * EARTH_OCEAN_VOLUME_KM3 * ratio * ratio;
+  return p.waterVolume * EARTH_WATER_VOLUME_KM3 * ratio * ratio;
 }

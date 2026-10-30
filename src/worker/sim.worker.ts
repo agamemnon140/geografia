@@ -15,7 +15,7 @@ scope.onmessage = (event) => {
   try {
     const world = build(request.params, (stage, fraction) => {
       scope.postMessage({ type: 'progress', id: request.id, stage, fraction });
-    });
+    }, request.options ?? {});
     scope.postMessage(
       { type: 'done', id: request.id, world, elapsedMs: performance.now() - started },
       worldBuffers(world),

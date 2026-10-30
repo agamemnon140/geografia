@@ -1,4 +1,5 @@
-import { ANNUAL } from '../sim/climate/insolation.ts';
+import { ANNUAL, SAMPLES } from '../sim/climate/insolation.ts';
+import { KOPPEN_NAMES } from '../sim/climate/koppen.ts';
 import type { World } from '../sim/pipeline.ts';
 import {
   BOUNDARY_CONVERGENT,
@@ -116,6 +117,28 @@ const ANOMALY_RAMP: Stop[] = [
   [8, [170, 20, 30]],
 ];
 
+const ICE_SHEET: RGB = [245, 248, 255];
+const SEA_ICE: RGB = [215, 232, 245];
+
+/** Standard Koppen-Geiger colors (Peel et al. 2007), indexed like KOPPEN_NAMES. */
+export const KOPPEN_COLORS: RGB[] = [
+  [30, 50, 90],
+  [0, 0, 255], [0, 120, 255], [70, 170, 250],
+  [255, 0, 0], [255, 150, 150], [245, 165, 0], [255, 220, 100],
+  [255, 255, 0], [200, 200, 0], [150, 150, 0],
+  [150, 255, 150], [100, 200, 100], [50, 150, 50],
+  [200, 255, 80], [100, 255, 80], [50, 200, 0],
+  [255, 0, 255], [200, 0, 200], [150, 50, 150], [150, 100, 150],
+  [170, 175, 255], [90, 120, 220], [75, 80, 180], [50, 0, 135],
+  [0, 255, 255], [55, 200, 255], [0, 125, 125], [0, 70, 95],
+  [178, 178, 178], [102, 102, 102],
+];
+
+/** Koppen name of a cell. */
+export function koppenName(world: World, cell: number): string {
+  return KOPPEN_NAMES[world.koppen[cell]] ?? 'unknown';
+}
+
 /** Precipitation of a cell for a sample index or ANNUAL, mm per year. */
 export function precipitationAt(world: World, cell: number, sample: number): number {
   return sample >= ANNUAL ? world.precipitation[cell] : world.precipitationSamples[sample * world.n + cell];
@@ -138,6 +161,25 @@ export const LAYERS: Layer[] = [
     id: 'elevation',
     name: 'Elevation',
     cellColor: (world, i) => hypsometric(world.elevation[i] - world.seaLevel),
+  },
+  {
+    id: 'koppen',
+    name: 'Koppen climate',
+    cellColor: (world, i) => {
+      if (world.elevation[i] < world.seaLevel) return hypsometric(world.elevation[i] - world.seaLevel);
+      return KOPPEN_COLORS[world.koppen[i]] ?? [0, 0, 0];
+    },
+  },
+  {
+    id: 'ice',
+    name: 'Ice',
+    cellColor: (world, i) => {
+      const rel = world.elevation[i] - world.seaLevel;
+      if (rel >= 0) return world.iceSheet[i] ? ICE_SHEET : mix(hypsometric(rel), LAND_WASH, 0.3);
+      const months = world.seaIceMonths[i];
+      if (months === 0) return hypsometric(rel);
+      return mix(hypsometric(rel), SEA_ICE, 0.35 + 0.65 * (months / SAMPLES));
+    },
   },
   {
     id: 'rivers',

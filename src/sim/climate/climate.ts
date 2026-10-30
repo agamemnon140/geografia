@@ -1,25 +1,27 @@
 import type { Grid } from '../grid/grid.ts';
 import type { PlanetParams } from '../params.ts';
 import { circulationCells, computeWinds, type CirculationInfo } from './circulation.ts';
+import { computeIce, type IceFields } from './ice.ts';
 import { SAMPLES, declinations } from './insolation.ts';
 import { meshGeometry } from './mesh.ts';
 import { computeMoisture, type MoistureFields } from './moisture.ts';
 import { computeOcean, type OceanFields } from './ocean.ts';
 import { computeTemperature, globalMeanTemperature, type TemperatureFields } from './temperature.ts';
 
-/** Everything the climate stage produces (DESIGN 3.5 steps 1 to 5; ice follows in M6). */
+/** Everything the climate stage produces (DESIGN 3.5 steps 1 to 6; Koppen is classified by the pipeline once the rivers are final). */
 export interface Climate {
   circulation: CirculationInfo;
-  /** Global mean surface temperature at sea level for this insolation, degrees C. */
+  /** Global mean surface temperature at sea level for this insolation and glacial phase, degrees C. */
   globalMeanTemperature: number;
   declinations: Float64Array;
-  /** Temperature with the ocean-current correction applied. */
+  /** Temperature with the ocean-current and ice-albedo corrections applied. */
   temperature: TemperatureFields;
   /** Eastward wind per sample, sample-major, m/s. */
   windU: Float64Array;
   /** Northward wind per sample, sample-major, m/s. */
   windV: Float64Array;
   ocean: OceanFields;
+  ice: IceFields;
   moisture: MoistureFields;
 }
 
@@ -51,15 +53,18 @@ export function computeClimate(
     temperature.annual[i] += a;
     for (let s = 0; s < SAMPLES; s++) temperature.samples[s * n + i] += a;
   }
+  // Ice and its albedo cooling come before moisture: frozen seas barely evaporate.
+  const ice = computeIce(grid, temperature, elevation, seaLevel, areaKm2);
   const moisture = computeMoisture(grid, params.radiusKm, elevation, seaLevel, lake, winds.u, winds.v, temperature.samples);
   return {
     circulation,
-    globalMeanTemperature: globalMeanTemperature(params.insolation),
+    globalMeanTemperature: globalMeanTemperature(params.insolation, params.glacialPhase),
     declinations: decl,
     temperature,
     windU: winds.u,
     windV: winds.v,
     ocean,
+    ice,
     moisture,
   };
 }

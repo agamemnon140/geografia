@@ -1,7 +1,7 @@
 import type { PlanetParams } from '../sim/params.ts';
-import type { World } from '../sim/pipeline.ts';
+import type { BuildOptions, World } from '../sim/pipeline.ts';
 
-export type WorkerRequest = { type: 'build'; id: number; params: PlanetParams };
+export type WorkerRequest = { type: 'build'; id: number; params: PlanetParams; options?: BuildOptions };
 
 export type WorkerResponse =
   | { type: 'progress'; id: number; stage: string; fraction: number }

@@ -1,5 +1,6 @@
 import type { Grid } from '../grid/grid.ts';
 import { relativeGravity, type PlanetParams } from '../params.ts';
+import { GLACIAL_COOLING_C } from './ice.ts';
 import { SAMPLES, SOLAR_CONSTANT, dailyMeanInsolation } from './insolation.ts';
 
 /**
@@ -12,8 +13,10 @@ import { SAMPLES, SOLAR_CONSTANT, dailyMeanInsolation } from './insolation.ts';
 
 /** Earth's global mean surface temperature, K. The planet's mean scales with the fourth root of insolation. */
 export const EARTH_MEAN_TEMPERATURE_K = 288.15;
-/** Degrees C per W/m^2 of annual-mean insolation anomaly from the global mean; fitted to Earth's zonal climatology (equator 27, poles -15). */
+/** Degrees C per W/m^2 of annual-mean insolation anomaly from the global mean over land; fitted to Earth's zonal climatology (equator 27, poles -15). */
 export const K_ANNUAL = 0.17;
+/** The same over the ocean, smaller because the ocean carries more heat poleward (Arctic waters sit near -8 C in the annual mean, not -15). */
+export const K_ANNUAL_OCEAN = 0.14;
 /** Seasonal response of the land surface, degrees C per W/m^2 of lagged insolation anomaly (Siberia: 40 degrees of range at 60 N). */
 export const K_SEASON_LAND = 0.1;
 /** Seasonal response of the ocean mixed layer, much smaller because of its heat capacity. */
@@ -38,11 +41,15 @@ export interface TemperatureFields {
   annual: Float64Array;
   /** Surface temperature per sample, sample-major (sample * n + cell), degrees C. */
   samples: Float64Array;
+  /** Provenance for the explain mode: the annual mean is the global mean plus these three terms (currents and ice add theirs later). */
+  insolationTerm: Float64Array;
+  lapseTerm: Float64Array;
+  continentalTerm: Float64Array;
 }
 
-/** Global mean surface temperature for a stellar flux relative to Earth, degrees C. */
-export function globalMeanTemperature(insolation: number): number {
-  return EARTH_MEAN_TEMPERATURE_K * insolation ** 0.25 - 273.15;
+/** Global mean surface temperature for a stellar flux relative to Earth and a glacial phase, degrees C. */
+export function globalMeanTemperature(insolation: number, glacialPhase = 0): number {
+  return EARTH_MEAN_TEMPERATURE_K * insolation ** 0.25 - 273.15 - GLACIAL_COOLING_C * glacialPhase;
 }
 
 /** Lapse rate for a planet, K per km. */
@@ -60,13 +67,16 @@ export function computeTemperature(
 ): TemperatureFields {
   const n = grid.n;
   const s0 = SOLAR_CONSTANT * params.insolation;
-  const globalMean = globalMeanTemperature(params.insolation);
+  const globalMean = globalMeanTemperature(params.insolation, params.glacialPhase);
   const meanInsolation = s0 / 4;
   const lapse = lapseRate(params);
   const insolationAnnual = new Float64Array(n);
   const continentality = new Float64Array(n);
   const annual = new Float64Array(n);
   const samples = new Float64Array(SAMPLES * n);
+  const insolationTerm = new Float64Array(n);
+  const lapseTerm = new Float64Array(n);
+  const continentalTerm = new Float64Array(n);
   const q = new Float64Array(SAMPLES);
   for (let i = 0; i < n; i++) {
     const lat = grid.lat[i];
@@ -81,7 +91,10 @@ export function computeTemperature(
     const c = land ? 1 - Math.exp(-oceanDistance[i] / CONTINENTALITY_SCALE_CELLS) : 0;
     continentality[i] = c;
     const height = land ? (elevation[i] - seaLevel) / 1000 : 0;
-    const base = globalMean + K_ANNUAL * (qAnnual - meanInsolation) - lapse * height - CONTINENTAL_COOLING * c;
+    insolationTerm[i] = (K_ANNUAL_OCEAN + (K_ANNUAL - K_ANNUAL_OCEAN) * c) * (qAnnual - meanInsolation);
+    lapseTerm[i] = -lapse * height;
+    continentalTerm[i] = -CONTINENTAL_COOLING * c;
+    const base = globalMean + insolationTerm[i] + lapseTerm[i] + continentalTerm[i];
     annual[i] = base;
     // Thermal inertia: a first-order filter around the annual cycle, run three times around
     // so the periodic steady state is reached; the time constant blends land and ocean.
@@ -96,5 +109,5 @@ export function computeTemperature(
       }
     }
   }
-  return { insolationAnnual, continentality, annual, samples };
+  return { insolationAnnual, continentality, annual, samples, insolationTerm, lapseTerm, continentalTerm };
 }

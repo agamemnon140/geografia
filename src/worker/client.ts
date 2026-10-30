@@ -1,5 +1,5 @@
 import type { PlanetParams } from '../sim/params.ts';
-import type { Progress, World } from '../sim/pipeline.ts';
+import type { BuildOptions, Progress, World } from '../sim/pipeline.ts';
 import type { WorkerRequest, WorkerResponse } from './protocol.ts';
 
 interface Pending {
@@ -28,11 +28,11 @@ export class SimClient {
     };
   }
 
-  build(params: PlanetParams, onProgress: Progress = () => {}): Promise<BuildResult> {
+  build(params: PlanetParams, onProgress: Progress = () => {}, options: BuildOptions = {}): Promise<BuildResult> {
     const id = this.nextId++;
     return new Promise((resolve, reject) => {
       this.pending.set(id, { resolve, reject, onProgress });
-      const request: WorkerRequest = { type: 'build', id, params };
+      const request: WorkerRequest = { type: 'build', id, params, options };
       this.worker.postMessage(request);
     });
   }
