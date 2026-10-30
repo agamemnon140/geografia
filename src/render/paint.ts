@@ -4,7 +4,7 @@ import type { FloatArray, World } from '../sim/pipeline.ts';
 import type { RGB } from './colors.ts';
 import { RIVER_COLOR, RIVER_MIN_KM3, type Layer } from './layers.ts';
 import { strokeSegment } from './lines.ts';
-import { equirectRaster, latLonToPixel, type Raster } from './raster.ts';
+import { FULL_VIEW, equirectRaster, latLonToPixel, type Raster, type Viewport } from './raster.ts';
 
 /**
  * The smooth painter (DESIGN 8.5). Layers that define `smooth` get a sampler
@@ -125,25 +125,29 @@ export function paintSmooth(world: World, raster: Raster, layer: Layer, out: Uin
   if (layer.rivers && options.project) drawRivers(world, raster, out, options.project, options.pixelsPerCell ?? 10);
 }
 
-/** Projection, pixel scale and river scale of an equirectangular map of the given size. */
-export function mapPaintOptions(world: World, width: number, height: number, sample = ANNUAL): PaintOptions {
+/** Projection, pixel scale and river scale of an equirectangular window of the given size. */
+export function mapPaintOptions(world: World, width: number, height: number, sample = ANNUAL, view: Viewport = FULL_VIEW): PaintOptions {
   const grid = Grid.get(world.level);
   const radiusM = world.radiusKm * 1000;
+  const lat0 = (view.lat0 * Math.PI) / 180;
   return {
     sample,
-    project: (cell) => latLonToPixel(grid.lat[cell], grid.lon[cell], width, height),
+    project: (cell) => latLonToPixel(grid.lat[cell], grid.lon[cell], width, height, view),
     metersPerPixel: (_x, y) => {
-      const lat = Math.PI / 2 - ((y + 0.5) / height) * Math.PI;
-      return [Math.max(1, (2 * Math.PI * radiusM * Math.cos(lat)) / width), (Math.PI * radiusM) / height];
+      const lat = lat0 + ((0.5 - (y + 0.5) / height) * Math.PI) / view.zoom;
+      return [
+        Math.max(1, (2 * Math.PI * radiusM * Math.cos(lat)) / (width * view.zoom)),
+        (Math.PI * radiusM) / (height * view.zoom),
+      ];
     },
-    pixelsPerCell: (width * Math.sqrt((4 * Math.PI) / grid.n)) / (2 * Math.PI),
+    pixelsPerCell: (width * view.zoom * Math.sqrt((4 * Math.PI) / grid.n)) / (2 * Math.PI),
   };
 }
 
-/** Smooth paint of a layer onto an equirectangular RGBA buffer of the given size. */
-export function paintEquirect(world: World, layer: Layer, width: number, height: number, out: Uint8ClampedArray, sample = ANNUAL): void {
-  const raster = equirectRaster(Grid.get(world.level), width, height);
-  paintSmooth(world, raster, layer, out, mapPaintOptions(world, width, height, sample));
+/** Smooth paint of a layer onto an equirectangular RGBA buffer of the given size, for a window of the map. */
+export function paintEquirect(world: World, layer: Layer, width: number, height: number, out: Uint8ClampedArray, sample = ANNUAL, view: Viewport = FULL_VIEW): void {
+  const raster = equirectRaster(Grid.get(world.level), width, height, view);
+  paintSmooth(world, raster, layer, out, mapPaintOptions(world, width, height, sample, view));
 }
 
 /** Multiply the colors by a hillshade from the interpolated elevation; the sea gets a gentler version. */

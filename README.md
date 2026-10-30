@@ -40,10 +40,12 @@ currents, sstAnomaly, plates, crustAge, thickness, cells.
   climates shift, with every layer and the explain drawer available at each
   step. Export history writes the keyframes of the current layer as one PNG
   strip.
-- Three views in the bar above the stage: Map, Globe (drag to turn, click to
-  inspect; software-rendered, no WebGL) and Compare (A follows the history
-  slider, B is any keyframe or any gallery planet, with the statistics in
-  two columns). A legend sits under the layer selector.
+- Three views in the bar above the stage: Map (wheel zooms around the
+  cursor, drag pans with wrap-around, double-click resets), Globe (drag to
+  turn, click to inspect; software-rendered, no WebGL) and Compare (A
+  follows the history slider, B is any keyframe or any gallery planet, with
+  the statistics in two columns and one shared zoom). A legend sits under
+  the layer selector.
 - Real Earth builds the measured relief (NOAA ETOPO5 at half a degree,
   shipped in `public/data/`) with the simulator's own rivers, climate and
   biomes, so the links can be judged against the planet we know; it joins

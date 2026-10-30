@@ -295,7 +295,7 @@ The UI exists to expose causality, not to decorate. Every number on screen has a
 
 The screen is one planet seen three ways, chosen in a view bar above the stage:
 
-- Map: the equirectangular painter of v1.
+- Map: the equirectangular painter of v1, as a window on the cylinder: the wheel zooms around the cursor up to sixteen times (a sideways scroll pans along the parallels), dragging pans with the world wrapping around its antimeridian, a double click shows the whole world again. While a drag lasts the last rendering is translated; the window is re-rendered when it ends. In the Compare view both panes share one window.
 - Globe: an orthographic globe rendered on a 2D canvas without any library. Every pixel of the disc is unprojected to the sphere, rotated into the planet's frame and resolved with the same nearest-cell walk as the map, so the lookup is cached per view direction and a layer change only repaints. Drag turns the globe, a click picks a cell, a cosine light from the upper left gives the relief its roundness. The same painter serves both views: a layer is still one color per cell.
 - Compare: two maps side by side. A is the planet on the timeline; B is any keyframe of the same build or the final state of any gallery entry, so "this basin before and after the mountains rose" and "same parameters, other seed" are one dropdown away. The statistics table grows a second column and a click in either pane explains that pane's cell.
 

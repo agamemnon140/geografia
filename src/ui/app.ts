@@ -181,6 +181,8 @@ export function mountApp(root: HTMLElement): void {
   let sample = ANNUAL;
   let previewTimer: ReturnType<typeof setTimeout> | null = null;
   let playTimer: ReturnType<typeof setInterval> | null = null;
+  /** The history slider stays on the final world while keyframes arrive, until the user moves it. */
+  let followLatest = true;
   const entries: GalleryEntry[] = [];
 
   const setParams = (p: PlanetParams): void => {
@@ -337,7 +339,11 @@ export function mountApp(root: HTMLElement): void {
     stageGlobe.classList.toggle('hidden', id !== 'globe');
     stageCompare.classList.toggle('hidden', id !== 'compare');
     compareControls.classList.toggle('hidden', id !== 'compare');
-    viewHint.textContent = id === 'globe' ? 'drag to turn, click to inspect' : id === 'compare' ? 'A follows the history slider; pick B on the right' : '';
+    viewHint.textContent = id === 'globe'
+      ? 'drag to turn, click to inspect'
+      : id === 'compare'
+        ? 'A follows the history slider; pick B on the right; wheel zooms both panes together'
+        : 'wheel zooms around the cursor, drag pans, double-click shows the whole world';
     refreshVisibleViews();
     renderStats();
   };
@@ -376,6 +382,7 @@ export function mountApp(root: HTMLElement): void {
       return;
     }
     if (!current || current.keyframes.length === 0) return;
+    followLatest = false;
     playButton.textContent = 'Pause';
     if (Number(timeline.value) >= current.keyframes.length) timeline.value = '0';
     showTimelinePosition();
@@ -450,8 +457,9 @@ export function mountApp(root: HTMLElement): void {
           if (!entry) return;
           entry.keyframes.push(keyframe);
           if (current === entry) {
-            // Keep the slider on the final world while the history fills in.
-            if (Number(timeline.value) >= index) timeline.value = String(index + 1);
+            // Raise the range before moving the knob, or the browser clamps it to the old maximum.
+            timeline.max = String(entry.keyframes.length);
+            if (followLatest) timeline.value = String(entry.keyframes.length);
             renderTimeline();
             renderCompareOptions();
           }
@@ -464,6 +472,8 @@ export function mountApp(root: HTMLElement): void {
       if (mode === 'full') {
         entry = addToGallery(result.world);
         current = entry;
+        followLatest = true;
+        timeline.max = '0';
         timeline.value = '0';
       } else {
         current = null;
@@ -612,6 +622,7 @@ export function mountApp(root: HTMLElement): void {
   compareSelect.addEventListener('change', applyCompareChoice);
   timeline.addEventListener('input', () => {
     stopPlaying();
+    followLatest = false;
     showTimelinePosition();
   });
   playButton.addEventListener('click', togglePlaying);
@@ -640,6 +651,9 @@ export function mountApp(root: HTMLElement): void {
   map.onCellClick((cell) => renderInspector(cell));
   globe.onCellClick((cell) => renderInspector(cell));
   mapA.onCellClick((cell) => renderInspector(cell, world as World, 'A'));
+  // The two panes of the Compare view share one window.
+  mapA.onViewChange((v) => mapB.setView(v, false));
+  mapB.onViewChange((v) => mapA.setView(v, false));
   mapB.onCellClick((cell) => {
     if (compareWorld) renderInspector(cell, compareWorld, 'B');
   });

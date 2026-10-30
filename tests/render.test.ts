@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { globeRaster, projectToGlobe, viewRotation } from '../src/render/globe.ts';
 import { LAYERS, cellColors, paintCells } from '../src/render/layers.ts';
 import { PixelSampler, paintEquirect } from '../src/render/paint.ts';
-import { equirectRaster } from '../src/render/raster.ts';
+import { clampViewport, equirectRaster, latLonToPixel, pixelToLatLon } from '../src/render/raster.ts';
 import { fromLatLon, DEG } from '../src/sim/grid/geometry.ts';
 import { Grid } from '../src/sim/grid/grid.ts';
 import { nearestCell } from '../src/sim/grid/locate.ts';
@@ -52,6 +52,34 @@ describe('globe projection', () => {
     expect((at as [number, number])[1]).toBeLessThan(200);
     const east = projectToGlobe(grid, nearestCell(grid, ...fromLatLon(0, 30 * DEG)), 400, 0, 0);
     expect((east as [number, number])[0]).toBeGreaterThan(200);
+  });
+});
+
+describe('map viewport', () => {
+  const grid = Grid.get(5);
+
+  it('round-trips pixels through latitude and longitude at any zoom and center', () => {
+    for (const view of [{ lon0: 0, lat0: 0, zoom: 1 }, { lon0: 150, lat0: 30, zoom: 3 }, { lon0: -170, lat0: -60, zoom: 8 }]) {
+      for (const [px, py] of [[10, 20], [700, 360], [1430, 700]]) {
+        const [lat, lon] = pixelToLatLon(px, py, 1440, 720, view);
+        const [x, y] = latLonToPixel(lat, lon, 1440, 720, view);
+        expect(x).toBeCloseTo(px, 6);
+        expect(y).toBeCloseTo(py, 6);
+      }
+    }
+  });
+
+  it('centers a zoomed window on its view point and keeps the window within the poles', () => {
+    const view = { lon0: 30, lat0: 20, zoom: 4 };
+    const raster = equirectRaster(grid, 120, 60, view);
+    const center = raster.cell[30 * 120 + 60];
+    const expected = nearestCell(grid, ...fromLatLon(20 * DEG, 30 * DEG));
+    const near = center === expected || Array.from(grid.neighbors(expected)).includes(center);
+    expect(near).toBe(true);
+    expect(clampViewport({ lon0: 0, lat0: 80, zoom: 4 }).lat0).toBeCloseTo(67.5, 9);
+    expect(clampViewport({ lon0: 190, lat0: 0, zoom: 1 }).lon0).toBeCloseTo(-170, 9);
+    expect(clampViewport({ lon0: 0, lat0: 0, zoom: 40 }).zoom).toBe(16);
+    expect(clampViewport({ lon0: 0, lat0: 50, zoom: 1 }).lat0).toBe(0);
   });
 });
 
