@@ -299,6 +299,8 @@ The screen is one planet seen three ways, chosen in a view bar above the stage:
 - Globe: an orthographic globe rendered on a 2D canvas without any library. Every pixel of the disc is unprojected to the sphere, rotated into the planet's frame and resolved with the same nearest-cell walk as the map, so the lookup is cached per view direction and a layer change only repaints. Drag turns the globe, a click picks a cell, a cosine light from the upper left gives the relief its roundness. The same painter serves both views: a layer is still one color per cell.
 - Compare: two maps side by side. A is the planet on the timeline; B is any keyframe of the same build or the final state of any gallery entry, so "this basin before and after the mountains rose" and "same parameters, other seed" are one dropdown away. The statistics table grows a second column and a click in either pane explains that pane's cell.
 
+The Koppen layer colors by family (A blues, B reds and oranges, C greens, D purples, E grays; lighter when drier or colder) over a muted slate sea, instead of the thirty saturated hues of the textbook palette, which blur into noise at 110 km per cell; the legend names the shades and the inspector names the subtype.
+
 Around the stage: a legend under the layer selector (gradient bar with ticks for ramps, swatches for categories, a sentence for direction hues); the history slider gains a play button; Export history writes every keyframe of the current layer into one PNG strip with step captions, and Export PNG writes whatever view is on screen.
 
 ### 8.5 Image quality (built in M11)

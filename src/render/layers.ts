@@ -153,19 +153,33 @@ const ANOMALY_RAMP: Stop[] = [
 const ICE_SHEET: RGB = [245, 248, 255];
 const SEA_ICE: RGB = [215, 232, 245];
 
-/** Standard Koppen-Geiger colors (Peel et al. 2007), indexed like KOPPEN_NAMES. */
+/**
+ * Koppen colors by family, indexed like KOPPEN_NAMES: one hue per main
+ * group (A blues, B reds and oranges, C greens, D purples, E grays), the
+ * second and third letters as lightness steps, lighter when drier or
+ * colder. The textbook palette of Peel et al. (2007) spreads thirty
+ * saturated hues that blur at this scale; here a glance gives the group and
+ * the legend or the inspector gives the subtype.
+ */
 export const KOPPEN_COLORS: RGB[] = [
-  [30, 50, 90],
-  [0, 0, 255], [0, 120, 255], [70, 170, 250],
-  [255, 0, 0], [255, 150, 150], [245, 165, 0], [255, 220, 100],
-  [255, 255, 0], [200, 200, 0], [150, 150, 0],
-  [150, 255, 150], [100, 200, 100], [50, 150, 50],
-  [200, 255, 80], [100, 255, 80], [50, 200, 0],
-  [255, 0, 255], [200, 0, 200], [150, 50, 150], [150, 100, 150],
-  [170, 175, 255], [90, 120, 220], [75, 80, 180], [50, 0, 135],
-  [0, 255, 255], [55, 200, 255], [0, 125, 125], [0, 70, 95],
-  [178, 178, 178], [102, 102, 102],
+  [70, 82, 100],
+  [25, 70, 190], [60, 125, 225], [125, 180, 240],
+  [215, 45, 35], [235, 135, 120], [235, 145, 35], [245, 205, 120],
+  [165, 165, 45], [195, 195, 85], [220, 225, 140],
+  [55, 145, 60], [95, 175, 95], [150, 205, 140],
+  [15, 110, 45], [45, 150, 75], [105, 190, 120],
+  [140, 55, 150], [165, 95, 175], [190, 135, 200], [215, 175, 225],
+  [105, 50, 165], [135, 90, 195], [165, 130, 215], [195, 170, 235],
+  [75, 45, 145], [105, 85, 175], [140, 125, 200], [175, 165, 225],
+  [185, 185, 185], [240, 240, 245],
 ];
+
+/** The sea on the Koppen layer: bathymetry pulled toward slate, so the land carries the color. */
+const KOPPEN_SEA: RGB = [88, 98, 114];
+
+function koppenSea(rel: number): RGB {
+  return mix(hypsometric(rel), KOPPEN_SEA, 0.6);
+}
 
 /** Koppen name of a cell. */
 export function koppenName(world: World, cell: number): string {
@@ -233,21 +247,22 @@ export const LAYERS: Layer[] = [
     legend: {
       kind: 'categories',
       items: [
-        { color: KOPPEN_COLORS[1], label: 'A tropical (Af, Am, Aw)' },
-        { color: KOPPEN_COLORS[4], label: 'B arid (BW desert, BS steppe)' },
-        { color: KOPPEN_COLORS[15], label: 'C temperate (Cs, Cw, Cf)' },
-        { color: KOPPEN_COLORS[26], label: 'D continental (Ds, Dw, Df)' },
-        { color: KOPPEN_COLORS[29], label: 'E polar (ET tundra, EF ice cap)' },
+        { color: KOPPEN_COLORS[2], label: 'A tropical, blues: Af dark, Am, Aw light' },
+        { color: KOPPEN_COLORS[4], label: 'B arid: BWh red, BWk pink, BSh orange, BSk sand' },
+        { color: KOPPEN_COLORS[15], label: 'C temperate, greens: Cs olive, Cw mid, Cf deep; lighter when cooler' },
+        { color: KOPPEN_COLORS[26], label: 'D continental, purples: Ds, Dw, Df; lighter when colder' },
+        { color: KOPPEN_COLORS[29], label: 'E polar: ET tundra gray, EF ice cap white' },
+        { color: KOPPEN_SEA, label: 'sea, muted so the land stands out' },
       ],
     },
     relief: 'light',
     cellColor: (world, i) => {
-      if (world.elevation[i] < world.seaLevel) return hypsometric(world.elevation[i] - world.seaLevel);
+      if (world.elevation[i] < world.seaLevel) return koppenSea(world.elevation[i] - world.seaLevel);
       return KOPPEN_COLORS[world.koppen[i]] ?? [0, 0, 0];
     },
     smooth: (world, px) => {
       const rel = relief(world, px);
-      if (rel < 0) return hypsometric(rel);
+      if (rel < 0) return koppenSea(rel);
       return KOPPEN_COLORS[world.koppen[px.cell]] ?? [0, 0, 0];
     },
   },
