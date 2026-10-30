@@ -59,7 +59,7 @@ function report(): void {
   console.log(
     `step ${String(sim.step).padStart(3)} | alive ${alive} | cont ${(cont / total * 100).toFixed(1)}% land ${(land / total * 100).toFixed(1)}% ` +
     `| maxT ${maxT.toFixed(0)} km (oce ${maxTOceanic.toFixed(0)}) maxV ${maxV.toFixed(1)} maxS ${maxS.toFixed(1)} | maxE ${maxE.toFixed(0)} m meanLand ${(land > 0 ? landSum / land : 0).toFixed(0)} m sea ${sim.seaLevel.toFixed(0)} ` +
-    `| vol ${v.toFixed(3)} | lakes ${lakes.length} (${endorheic} closed) | plates ${sim.activePlates()} | rates ${rates}`,
+    `| vol ${v.toFixed(3)} | lakes ${lakes.length} (${endorheic} closed) | plates ${sim.activePlates()}/${sim.plates.length} events ${sim.events.length} | rates ${rates}`,
   );
 }
 
@@ -70,3 +70,6 @@ for (let s = 1; s <= steps; s++) {
   if (s % every === 0 || s === steps) report();
 }
 console.log(`elapsed ${((performance.now() - t0) / 1000).toFixed(2)} s for ${steps} steps`);
+for (const e of sim.events) {
+  console.log(e.type === 'rift' ? `step ${e.step}: plate ${e.plate} rifted from plate ${e.other}` : `step ${e.step}: plate ${e.plate} merged into plate ${e.other}`);
+}

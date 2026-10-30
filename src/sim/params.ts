@@ -22,6 +22,8 @@ export interface PlanetParams {
   tectonicAge: number;
   /** 0 = interglacial, 1 = glacial maximum. */
   glacialPhase: number;
+  /** Mantle heat flux relative to Earth: plate speed, hotspot volcanism and rifting rate. */
+  mantleHeat: number;
 }
 
 export interface ParamSpec {
@@ -38,7 +40,7 @@ export interface ParamSpec {
 }
 
 /** Milestone currently implemented; parameters wired in later milestones are shown disabled. */
-export const CURRENT_MILESTONE = 6;
+export const CURRENT_MILESTONE = 8;
 
 export const PARAM_SPECS: ParamSpec[] = [
   { key: 'seed', label: 'Seed', min: 0, max: 4294967295, step: 1, unit: '', wiredIn: 1, help: 'All randomness' },
@@ -51,6 +53,7 @@ export const PARAM_SPECS: ParamSpec[] = [
   { key: 'plateCount', label: 'Plates', min: 4, max: 30, step: 1, unit: '', wiredIn: 2, help: 'Initial plate seeds' },
   { key: 'tectonicAge', label: 'Tectonic age', min: 50, max: 400, step: 10, unit: 'steps', wiredIn: 2, help: 'Loop length: more orogenies, more erosion' },
   { key: 'glacialPhase', label: 'Glacial phase', min: 0, max: 1, step: 0.05, unit: '', wiredIn: 6, help: 'Temperature offset, sea-level drop, ice extent' },
+  { key: 'mantleHeat', label: 'Mantle heat', min: 0.3, max: 3, step: 0.1, unit: 'x Earth', wiredIn: 8, help: 'Plate speed, hotspot volcanism, rifting rate' },
 ];
 
 export const EARTH: PlanetParams = {
@@ -64,6 +67,7 @@ export const EARTH: PlanetParams = {
   plateCount: 12,
   tectonicAge: 200,
   glacialPhase: 0,
+  mantleHeat: 1,
 };
 
 export interface Preset {
@@ -80,6 +84,7 @@ export const PRESETS: Preset[] = [
   { name: 'Dry world', params: { ...EARTH, waterVolume: 0.3 } },
   { name: 'Snowball', params: { ...EARTH, insolation: 0.85, glacialPhase: 1 } },
   { name: 'Young planet', params: { ...EARTH, tectonicAge: 50 } },
+  { name: 'Hot mantle', params: { ...EARTH, mantleHeat: 2.5, tectonicAge: 300 } },
 ];
 
 /** Clamp every parameter into its spec range and normalize the seed to uint32. */

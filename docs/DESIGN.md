@@ -77,6 +77,15 @@ Mechanisms added while calibrating M2 (all in `tectonics/crust.ts` with their ju
 
 Calibration status after M2 (Earth preset, three seeds): ocean 64 to 69%, continental crust 36 to 39%, highest point 8.9 to 10.8 km, mean ocean depth 3.8 to 4.1 km, continental volume conserved within 3%, build 1.5 s. Known deviations: mean land elevation 1.5 km (Earth 0.84 km) and 15 to 24% of the surface above 1.5 km (Earth about 6%), because only thermal erosion exists so far; fluvial erosion in M3 is the physical fix. Plate speeds decay to 0.05 to 0.2 cells per step by step 200 under the collision brake; revisit when rifting of plates arrives in phase 2.
 
+Plate births and deaths (phase 2, built in M8; `tectonics/simulation.ts`):
+
+- Every 10 steps the simulation checks each plate. A plate whose speed has stayed below 0.12 cells per step for 30 steps and that shares a continental convergent contact of at least 8 cells with a neighbor merges into that neighbor: its parcels are resampled into the neighbor's frame at their current world positions (two landing on one cell fuse, continental thickness adding up), and the plate is left empty and dead. The brake that locked the pair no longer acts, so the merged continent regains speed through the pole walk.
+- A plate whose continental area exceeds 4% of the planet's surface and that has been locked for 25 steps rifts with probability 0.25 per check times the relative mantle heat: a great circle through its continental centroid with a random strike splits the plate; the parcels on one side become a new plate whose frame starts equal to the parent's (nothing moves at the instant of the split), and the two plates receive opposite halves of a relative Euler vector whose pole sits 10 degrees beyond one end of the continent, so the rift opens along its whole length, fastest at the far end. The existing rifting and sea-floor machinery fills the gap: thinned margins first, then new oceanic crust.
+- The mantle heat parameter scales plate speeds by its square root, hotspot volcanism linearly and the rift probability linearly. Births and deaths are recorded as events with their step, so the timeline can show when a supercontinent broke or two continents welded.
+- Two M2 rules changed to make this work. The collision brake is now applied per step in proportion to the suture length (3% per step once ten cells collide), instead of per colliding cell, and the pole walk relaxes speeds toward the typical value ten times faster (slab pull elsewhere), so only long sutures lock a plate; mean speeds stay at 0.1 to 0.3 cells per step through a 200-step run instead of decaying to the floor. Crust thickened by flow or thrust from a collision belt now carries the orogeny step, so plateaus stay explained after their suture has become plate interior.
+
+Calibration status after M8 (Earth preset, three seeds, 200 steps): 4 to 7 plate events per run, of which 1 to 3 rifts; plates alive at the end 8 to 10 of 13 to 14 ever; ocean 64 to 70%, the hypsometry and conservation tests of M2 unchanged.
+
 ### 3.4 Hydrology (every K steps inside the loop, and once on the final state)
 
 - Precipitation proxy inside the loop: latitude band profile times an ocean-proximity decay.
@@ -158,6 +167,7 @@ The tectonic loop is step-able and deterministic, so history is a matter of copy
 | plate count | 4 to 30 | Initial plate seeds |
 | tectonic age | steps (50 to 400) | Loop length: more orogenies, more erosion |
 | glacial phase | 0 to 1 | Temperature offset, sea-level drop, ice extent |
+| mantle heat (phase 2) | relative to Earth (0.3 to 3) | Plate speed, hotspot volcanism, rifting rate |
 
 Presets: Earth, Super-Earth, Slow rotator, High tilt, Waterworld, Dry world, Snowball, Young planet.
 
@@ -245,6 +255,7 @@ The UI exists to expose causality, not to decorate. Every number on screen has a
 | M5 | Precipitation and ocean current layers; the final rivers |
 | M6 | Ice and Koppen layers, glacial phase, gallery with statistics, explain drawer with itemized components, parameters in the URL for sharing, PNG and JSON export, automatic coarse preview on parameter change |
 | M7 | History slider under the map; keyframes stream in after the final world; every layer, the statistics and the explain drawer work at any step; exports carry the step |
+| M8 | Mantle heat parameter and the Hot mantle preset; plate births and deaths listed under the statistics, counted per step on the timeline |
 
 ### 8.3 Rules
 

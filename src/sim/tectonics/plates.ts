@@ -21,11 +21,15 @@ export function randomUnit(rng: Rng): [number, number, number] {
   return [r * Math.cos(phi), r * Math.sin(phi), z];
 }
 
-/** Plates with random Euler poles; `cellAngle` is the angular size of a cell, plates move 0.15 to 0.5 cells per step. */
-export function initPlates(count: number, rng: Rng, cellAngle: number): Plate[] {
+/**
+ * Plates with random Euler poles; `cellAngle` is the angular size of a cell,
+ * plates move 0.15 to 0.5 cells per step at Earth's mantle heat, scaled by
+ * `speed` (the square root of the relative mantle heat flux).
+ */
+export function initPlates(count: number, rng: Rng, cellAngle: number, speed = 1): Plate[] {
   const plates: Plate[] = [];
   for (let p = 0; p < count; p++) {
-    plates.push({ id: p, axis: randomUnit(rng), rate: cellAngle * rng.range(0.15, 0.5), rotation: identity() });
+    plates.push({ id: p, axis: randomUnit(rng), rate: cellAngle * speed * rng.range(0.15, 0.5), rotation: identity() });
   }
   return plates;
 }
@@ -43,15 +47,33 @@ export function rotatePlates(plates: Plate[]): void {
  * a continental collision regains motion over a few hundred steps as if new
  * subduction had started elsewhere.
  */
-export function perturbPlates(plates: Plate[], rng: Rng, cellAngle: number): void {
-  const typical = cellAngle * 0.3;
+export function perturbPlates(plates: Plate[], rng: Rng, cellAngle: number, speed = 1): void {
+  const typical = cellAngle * 0.3 * speed;
   for (const p of plates) {
     const [dx, dy, dz] = randomUnit(rng);
     p.axis = normalize3(p.axis[0] + 0.25 * dx, p.axis[1] + 0.25 * dy, p.axis[2] + 0.25 * dz);
+    // Relaxation toward the typical speed stands for slab pull from subduction elsewhere; it has to
+    // beat the collision brake except along long sutures, or every plate ends up locked.
     const walked = p.rate * rng.range(0.85, 1.15);
-    const relaxed = walked + 0.03 * (typical - walked);
-    p.rate = Math.min(cellAngle * 0.45, Math.max(cellAngle * 0.05, relaxed));
+    const relaxed = walked + 0.1 * (typical - walked);
+    p.rate = Math.min(cellAngle * 0.45 * speed, Math.max(cellAngle * 0.05, relaxed));
   }
+}
+
+/** Euler vector (axis times rate) of a plate. */
+export function eulerVector(p: Plate): [number, number, number] {
+  return [p.axis[0] * p.rate, p.axis[1] * p.rate, p.axis[2] * p.rate];
+}
+
+/** Set a plate's axis and rate from an Euler vector; a zero vector leaves the axis and sets a tiny rate. */
+export function setEulerVector(p: Plate, x: number, y: number, z: number): void {
+  const len = Math.hypot(x, y, z);
+  if (len < 1e-15) {
+    p.rate = 1e-9;
+    return;
+  }
+  p.axis = [x / len, y / len, z / len];
+  p.rate = len;
 }
 
 /** Surface velocity of a plate at world point x: omega cross x, with omega = rate * axis. */

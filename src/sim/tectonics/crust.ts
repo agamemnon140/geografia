@@ -44,6 +44,8 @@ export const CRUST_DIFFUSION = 0.02;
 export const FLOW_THRESHOLD_KM = 45;
 /** Fraction of the thickness difference that flows to each thinner neighbor per step above the threshold. */
 export const FLOW_RATE = 0.1;
+/** Crustal flow above this, in km per step, stamps the receiving cell with the current orogeny step. */
+export const FLOW_STAMP_KM = 0.05;
 /** Volcanic thickening per subduction event on each cell of the arc. */
 export const ARC_RATE_KM = 0.01;
 /** Arc width in cells around the overriding boundary cell. */
@@ -58,8 +60,10 @@ export const SEDIMENT_CAP_KM = 10;
 export const BUOYANT_THICKNESS_KM = 20;
 /** Minimum crust slab that thrusts into an empty frame cell as a new parcel. */
 export const MIN_THRUST_KM = 5;
-/** Plate rate multiplier per continental collision event; collisions lock plates within a few tens of steps. */
-export const COLLISION_BRAKE = 0.995;
+/** Plate rate multiplier per step for a plate in a full continental collision (India after hitting Eurasia: speed divided by three in a few tens of steps). */
+export const COLLISION_BRAKE = 0.97;
+/** Collision cells per step at which the brake saturates; shorter sutures brake proportionally less. */
+export const COLLISION_SATURATION_CELLS = 10;
 /** Share of plates seeded without continental crust (Earth has the Pacific, Nazca, Cocos, Philippine plates). */
 export const OCEANIC_PLATE_SHARE = 0.35;
 export const HOTSPOT_COUNT = 8;
@@ -69,6 +73,24 @@ export const CONTINENTAL_FRACTION = 0.4;
 export const INTERIOR_BIAS = 0.5;
 /** Steps between random walks of the Euler poles. */
 export const POLE_WALK_INTERVAL = 20;
+/** Steps between checks for plate births (rifts) and deaths (mergers) (DESIGN 9.1, built in M8). */
+export const PLATE_EVENT_INTERVAL = 10;
+/** A plate slower than this many cells per step counts as locked. */
+export const SLOW_RATE_CELLS = 0.12;
+/** Locked steps before a large continental plate may rift (mantle heat piles up under a stalled continent). */
+export const RIFT_LOCK_STEPS = 20;
+/** Continental area a plate needs before it can rift, as a fraction of the planet's surface (Earth: Africa is 6%). */
+export const RIFT_MIN_CONTINENT_FRACTION = 0.04;
+/** Probability per check that an eligible plate rifts, at Earth's mantle heat. */
+export const RIFT_PROBABILITY = 0.35;
+/** Relative opening rate across a new rift at its far end, in cells per step. */
+export const RIFT_RATE_CELLS = 0.3;
+/** Angular margin between the end of the continent and the relative pole of a rift, radians (about 10 degrees). */
+export const RIFT_POLE_MARGIN = 0.17;
+/** Locked steps before a plate welded to a neighbor along a continental suture merges into it. */
+export const MERGE_LOCK_STEPS = 40;
+/** Minimum continental suture length, in cells, for a merger. */
+export const MERGE_MIN_SUTURE = 12;
 /** Steps between fluvial erosion passes (DESIGN 3.4: hydrology every K steps inside the loop). */
 export const FLUVIAL_INTERVAL = 5;
 /**

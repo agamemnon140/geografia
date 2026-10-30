@@ -70,6 +70,12 @@ export class ParcelPool {
     return id;
   }
 
+  /** Register a new plate (born from a rift): an empty frame of its own. Returns its id. */
+  addPlate(n: number): number {
+    this.frameIndex.push(new Int32Array(n).fill(-1));
+    return this.frameIndex.length - 1;
+  }
+
   /** Make a parcel continental with the given thickness. */
   setContinental(id: number, thickness = CONTINENTAL_THICKNESS_KM): void {
     this.crustType[id] = 1;

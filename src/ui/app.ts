@@ -66,6 +66,7 @@ function template(): string {
         </div>
         <h2>Statistics</h2>
         <table id="stats" class="stats"></table>
+        <div id="events" class="inspector"></div>
         <h2>Explain</h2>
         <div id="inspector" class="inspector">Click the map to see why a cell is what it is.</div>
       </aside>
@@ -102,6 +103,7 @@ export function mountApp(root: HTMLElement): void {
   const exportJsonButton = q<HTMLButtonElement>('#exportJson');
   const copyLinkButton = q<HTMLButtonElement>('#copyLink');
   const statsTable = q<HTMLTableElement>('#stats');
+  const eventsBox = q<HTMLDivElement>('#events');
   const inspector = q<HTMLDivElement>('#inspector');
   const timelineRow = q<HTMLDivElement>('#timelineRow');
   const timeline = q<HTMLInputElement>('#timeline');
@@ -141,7 +143,8 @@ export function mountApp(root: HTMLElement): void {
     const rows: [string, string][] = [
       ['Grid level', `${w.level} (${w.n.toLocaleString()} cells)${w.preview ? ', preview' : ''}`],
       ['Tectonic step', `${w.steps} of ${w.params.tectonicAge}`],
-      ['Active plates', `${s.activePlates} of ${w.plates.length}`],
+      ['Active plates', `${s.activePlates} of ${w.plates.length} ever (${w.params.plateCount} at the start)`],
+      ['Plate events', `${w.events.filter((e) => e.type === 'rift').length} rifts, ${w.events.filter((e) => e.type === 'merge').length} mergers`],
       ['Ocean / land', `${pct(s.oceanFraction)} / ${pct(s.landFraction)}`],
       ['Continents', `${s.continents} (largest ${(s.largestLandmassKm2 / 1e6).toFixed(1)} million km²), ${s.islands} islands`],
       ['Continental crust', pct(s.continentalFraction)],
@@ -164,6 +167,9 @@ export function mountApp(root: HTMLElement): void {
       ['Current anomalies', `${s.warmestCurrentAnomaly.toFixed(1)} / ${s.coldestCurrentAnomaly.toFixed(1)} °C`],
     ];
     statsTable.innerHTML = rows.map(([key, value]) => `<tr><td>${key}</td><td>${value}</td></tr>`).join('');
+    eventsBox.textContent = w.events
+      .map((e) => (e.type === 'rift' ? `step ${e.step}: plate ${e.plate} rifted from plate ${e.other}` : `step ${e.step}: plate ${e.plate} merged into plate ${e.other}`))
+      .join('\n');
   };
 
   const renderInspector = (cell: number): void => {

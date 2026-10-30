@@ -11,7 +11,7 @@ import { validateParams, waterVolumeKm3, type PlanetParams } from './params.ts';
 import { Rng } from './rng/xoshiro.ts';
 import { computeStats, type WorldStats } from './stats.ts';
 import { SEDIMENT_M_PER_KM, TRENCH_M, crustElevation, volcanicFactor } from './tectonics/crust.ts';
-import { BOUNDARY_SUBDUCTING, TectonicsSim } from './tectonics/simulation.ts';
+import { BOUNDARY_SUBDUCTING, TectonicsSim, type TectonicEvent } from './tectonics/simulation.ts';
 
 import type { FloatArray } from './types.ts';
 
@@ -135,6 +135,8 @@ export interface World {
   plates: PlateInfo[];
   /** World cells of the mantle hotspots. */
   hotspots: number[];
+  /** Plate births and deaths up to this step, oldest first. */
+  events: TectonicEvent[];
   stats: WorldStats;
 }
 
@@ -184,6 +186,7 @@ export interface ReliefState {
   boundary: Uint8Array;
   plates: PlateInfo[];
   hotspots: number[];
+  events: TectonicEvent[];
 }
 
 /** Copy the simulation's current state (the final one shares no buffers with the simulation either). */
@@ -223,6 +226,7 @@ export function snapshotSim(sim: TectonicsSim): ReliefState {
     boundary: Uint8Array.from(sim.boundary),
     plates: sim.plates.map((p) => ({ axis: [p.axis[0], p.axis[1], p.axis[2]], rate: p.rate })),
     hotspots: Array.from(sim.hotspots),
+    events: sim.events.map((e) => ({ ...e })),
   };
 }
 
@@ -360,6 +364,7 @@ export function finalize(ctx: BuildContext, state: ReliefState, onProgress: Prog
     globalMeanTemperature: climate.globalMeanTemperature,
     plates: state.plates,
     hotspots: state.hotspots,
+    events: state.events,
     stats,
   };
 }
