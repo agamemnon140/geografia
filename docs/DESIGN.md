@@ -165,6 +165,54 @@ Per link, with the Earth preset, across several seeds:
 - M5: ocean currents, moisture advection, precipitation, final rivers with real precipitation, tests.
 - M6: ice and glacial phase, Koppen, presets, gallery with stats, explain inspector, end-to-end determinism test.
 
-## 8. Phase 2 backlog
+## 8. Vision beyond v1
 
-Interactive timeline; plate rifting and merging; 2D energy-balance model with ice-albedo feedback; full climate every K steps inside the loop; 3D globe; A/B compare; extra parameters (atmospheric pressure, greenhouse, orbital eccentricity, mantle heat flux, moon and tides).
+Three further phases, each built on top of the previous one and governed by the same principles as v1: every output has a traceable causal path, the build is deterministic given (params, seed), and each link ships with tests against the Earth preset. Later phases encode hypotheses that are debated in the literature; the simulator treats them as toggleable rules in a sandbox, so the user can see which hypothesis leads to which outcome, not as claims of truth.
+
+### 8.1 Phase 2: planet history and deeper physics
+
+Goal: watch the planet become what it is, and let the physics produce transitions (snowball, greenhouse, supercontinent cycles) instead of only end states.
+
+- Interactive timeline. A time slider scrubs through geological steps: continents drift, mountains rise and erode, sea level moves, ice advances and retreats. Because the pipeline is deterministic and step-able, any step can be recomputed from the seed; keyframes every K steps are cached so scrubbing is instant and memory stays bounded (one keyframe at level 6 is a few MB). Every v1 layer becomes viewable at any step.
+- Climate history. The full climate pipeline runs at every keyframe, so a region has a climate time series ("this basin was a rainforest until the mountain range closed the moisture corridor"). This also replaces the precipitation proxy inside the loop with real precipitation.
+- Plate rifting and merging. Plates are born from continental rifts and die by subduction, so supercontinents assemble and break apart; the plate count becomes an initial condition instead of a constant.
+- Energy-balance model. A 2D diffusion model with ice-albedo feedback replaces the banded temperature link, so snowball and hothouse states emerge from insolation, tilt and greenhouse parameters rather than from the glacial-phase knob.
+- Extra parameters with causal paths: atmospheric pressure and greenhouse strength (temperature baseline, lapse rate), orbital eccentricity (hemispheric asymmetry of seasons), mantle heat flux (plate speed, volcanism rate), moon and tides (tidal range, rotation braking over the timeline).
+- Views: 3D globe, A/B comparison of two worlds or two steps of the same world, export of the history as a sequence of frames.
+
+What this unlocks downstream: biogeography (phase 3) needs to know when landmasses connected and separated, and civilization (phase 4) needs land bridges at glacial maxima. Both are read directly from the timeline.
+
+### 8.2 Phase 3: biosphere (flora and fauna)
+
+Goal: a living planet whose life distribution follows from climate and from the planet's history.
+
+- Flora. Net primary productivity per cell from temperature, precipitation, sunlight and seasonality, with a soil term from rock age, volcanic ash and river sediment (all available from v1 provenance). Vegetation types richer than Koppen (rainforest, seasonal forest, savanna, steppe, tundra, wetland) and simple succession over time after climate shifts.
+- Fauna. A coarse ecological model rather than species-level simulation: trophic levels and body-size classes supported by productivity; dispersal across the grid limited by oceans, deserts, mountains and climate tolerance; isolation on islands and separated continents produces endemism. Biogeographic realms emerge from plate history: continents that split long ago carry distinct faunas, and narrow straits become faunal boundaries (a Wallace line is an output, not an input).
+- Dynamics on the timeline. Land bridges exposed at glacial maxima let faunas exchange; climate that shifts faster than dispersal causes regional extinctions; megafauna persists where it co-evolved with predators and disappears where a new predator arrives suddenly (a toggleable hypothesis, relevant to domestication in phase 4).
+- Outputs: productivity, vegetation type, faunal realm, species-richness index, endemism index, large-herbivore and large-predator presence. Explain mode shows why a cell has the fauna it has ("isolated since step 120, no large herbivores arrived").
+
+### 8.3 Phase 4: civilization
+
+Goal: answer questions such as where the best city sites are, where domestication would start, whether humans would reach every continent, and which regions would develop earliest, as consequences of the geography rather than as scripted outcomes. The first version is a set of explainable indices and diffusion processes, not an agent-based empire simulator; agents can come later on top of the indices.
+
+- Origin and dispersal. The origin region is chosen by rule (default: a large tropical savanna on an old, continuous landmass) or picked by the user. Dispersal proceeds over land, along coasts and across straits, with crossing probability falling with open-water distance and rising when glacial sea-level drops expose bridges. Output: arrival time per cell and the list of continents reached. "Would humans populate every continent" is answered by strait widths, island chains and the glacial sea level of that particular planet.
+- Habitability and carrying capacity. From productivity, fresh water, temperature comfort, flood and drought variability, and a disease-load term that rises with heat, humidity and later with domesticated-animal density.
+- Domestication potential. Candidate crops come from flora: large-seeded annual grasses and pulses concentrate in seasonal-dry and Mediterranean climates. Candidate animals come from fauna: large social herbivores that survived to the human arrival. Each region gets a count of domesticable species; the Earth preset should produce few, concentrated centers rather than a uniform spread.
+- Spread of the agricultural package. Crops and techniques diffuse faster along latitude bands (similar climate and day length) than across them, so the east-west extent of a continent matters; deserts, mountain belts and seas are barriers. This is the continental-axis hypothesis, toggleable so its effect can be isolated.
+- Resources from geology. Ore and metal potential come from orogenic belts and volcanic arcs recorded in the tectonic provenance; fertile soils from volcanic ash and alluvium; building stone and salt from exposed crust types. Metallurgy and later technology packages need these inputs within reach.
+- City-site score. Per cell, a weighted and fully itemized sum: river confluence or mouth, navigable water, natural harbor (coastline geometry and shelter), fresh water, agricultural hinterland within a radius, defensibility from relief, low hazard (distance to plate boundaries, volcanoes, flood plains), and centrality on land and sea routes. The inspector shows every component, so "why is this the best harbor on the continent" has a concrete answer.
+- Trade and connectivity. Least-cost routes over land and sea between high-scoring sites; centrality on this network feeds back into the city score and into the diffusion speed of technologies and diseases.
+- Outputs: dispersal time, habitability, domestication potential, agricultural origin centers, spread fronts over time, ore potential, city-site score with ranked sites, trade network, and a narrative explain per cell.
+
+Tests for the Earth preset: agricultural origins arise in a handful of seasonal-dry regions near wild grasslands; the largest east-west landmass spreads its package fastest; small isolated continents receive few domesticates; humans reach every landmass whose straits at glacial maximum are narrower than the crossing threshold; top city sites sit on coasts and large rivers rather than inland deserts; all results deterministic per seed.
+
+### 8.4 Sequencing and what v1 must preserve
+
+Order: phase 2 (history) before phase 3 (biosphere) before phase 4 (civilization), because each consumes the previous one's time series. Each phase is itself delivered by links with tests, like v1.
+
+To keep these phases possible without rewrites, v1 commits to:
+
+- A pure, deterministic, step-able pipeline whose state is plain typed arrays (section 5), so any step can be recomputed and cached as a keyframe.
+- Provenance kept per cell rather than discarded after rendering (section 3.7), including crust type and age, orogeny and volcanic history, sediment and discharge, since phases 3 and 4 read soil, ore and harbor information from them.
+- Glacial phase as a first-class parameter with its sea-level mask, so land bridges are already computable.
+- Explain mode as a general mechanism (named components that sum to a value), so later indices plug into the same inspector.
