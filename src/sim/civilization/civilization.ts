@@ -137,7 +137,8 @@ function clamp01(v: number): number {
 }
 
 /** Hops from any marked cell, up to `reach`; cells beyond get reach + 1. */
-function hopsFrom(grid: Grid, marked: Uint8Array, reach: number): Uint8Array {
+/** Breadth-first hops from the marked cells over every cell, capped at reach + 1 (shared with the fantasy rules). */
+export function hopsFrom(grid: Grid, marked: Uint8Array, reach: number): Uint8Array {
   const n = grid.n;
   const out = new Uint8Array(n).fill(reach + 1);
   const queue = new Int32Array(n);

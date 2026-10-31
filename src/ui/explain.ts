@@ -6,6 +6,7 @@ import { MEGAFAUNA_GIANT_ARTHROPODS, MEGAFAUNA_HERBIVORES, MEGAFAUNA_PREDATORS, 
 import { SOIL_BASE, SOIL_WEIGHT, SUNSHINE_REFERENCE_H, SUNSHINE_WEIGHT, TROPICAL_FOREST_MM, VEGETATION_NAMES, carbonGrowthFactor, fireFactor, miamiNpp, oxygenGrowthFactor } from '../sim/biosphere/flora.ts';
 import { CEILING_M, CITY_TERMS, CITY_WEIGHTS, HABITABILITY_TERMS, PLATEAU_M, UNREACHED, hypoxiaShiftM, oxygenPartialPressure } from '../sim/civilization/civilization.ts';
 import { LINEAGE_COUNT } from '../sim/tectonics/crust.ts';
+import { ENTITIES, ENTITY_TERMS, FANTASY_NONE, LAIR_CODES, PEOPLES, PEOPLE_COUNT, WATER_ENTITIES, suitabilityAt, termAt } from '../sim/fantasy/fantasy.ts';
 import { MINERALS, MINERAL_COUNT, MINERAL_NAMES, oilPreservation } from '../sim/resources/minerals.ts';
 import { BOUNDARY_NAMES } from '../sim/tectonics/simulation.ts';
 
@@ -219,6 +220,21 @@ export function explainCell(world: World, cell: number, sample: number): Section
     );
     sections.push({ title: 'Civilization', lines: civ, group: 'civilization' });
   }
+
+  // Fantasy (M28): the sandbox rules, every term of every entity that could live in this kind of cell.
+  const fantasy: string[] = [];
+  const sea = world.elevation[cell] < world.seaLevel;
+  ENTITIES.forEach((name, e) => {
+    if (WATER_ENTITIES.has(name) !== sea) return;
+    const value = suitabilityAt(world.fantasy, cell, e);
+    const parts = ENTITY_TERMS[name].map((term, k) => `${term} ${termAt(world.fantasyTerms, cell, e, k).toFixed(2)}`).join(' × ');
+    const monster = e - PEOPLE_COUNT;
+    const rank = monster >= 0 ? world.lairs.filter((l) => l.monster === monster).findIndex((l) => l.cell === cell) + 1 : 0;
+    fantasy.push(`${name.padEnd(13)}${value.toFixed(2)} = ${parts}${rank ? ` (lair ${LAIR_CODES[monster]}${rank})` : ''}`);
+  });
+  const people = world.fantasyPeople[cell];
+  fantasy.push(`people      ${people === FANTASY_NONE ? 'none: no people passes 0.30 here' : `${PEOPLES[people]}: the best suitability here, above 0.30`}`);
+  sections.push({ title: 'Fantasy (sandbox rules)', lines: fantasy, group: 'fantasy' });
 
   return sections;
 }

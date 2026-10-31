@@ -2,6 +2,7 @@ import { ANNUAL, SAMPLES } from '../sim/climate/insolation.ts';
 import { KOPPEN_NAMES } from '../sim/climate/koppen.ts';
 import type { World } from '../sim/pipeline.ts';
 import { MEGAFAUNA_GIANT_ARTHROPODS, MEGAFAUNA_HERBIVORES, MEGAFAUNA_PREDATORS, REALM_NONE } from '../sim/biosphere/fauna.ts';
+import { ENTITIES, ENTITY_TERMS, FANTASY_NONE, LAIR_CODES, MONSTERS, MONSTER_COUNT, PEOPLES, PEOPLE_COUNT, WATER_ENTITIES, suitabilityAt } from '../sim/fantasy/fantasy.ts';
 import { UNREACHED } from '../sim/civilization/civilization.ts';
 import { VEGETATION_NAMES } from '../sim/biosphere/flora.ts';
 import { LINEAGE_COUNT } from '../sim/tectonics/crust.ts';
@@ -31,7 +32,7 @@ export type Legend =
  * sample index (0 to 11) or ANNUAL.
  */
 /** Where a layer belongs in the UI: geography is always on, the rest behind the "Beyond geography" toggle (M21). */
-export type LayerGroup = 'geography' | 'resources' | 'life' | 'civilization';
+export type LayerGroup = 'geography' | 'resources' | 'life' | 'civilization' | 'fantasy';
 
 /** A point symbol drawn over the paint (a deposit, a site). */
 export interface Mark {
@@ -881,6 +882,89 @@ const CIVILIZATION_LAYERS: Layer[] = [
   },
 ];
 LAYERS.push(...CIVILIZATION_LAYERS);
+
+// Fantasy (M28): a sandbox rule set behind its own toggle. No blues on land; the merfolk and the sea serpents live in the sea.
+export const PEOPLE_COLORS: RGB[] = [
+  [165, 105, 55],
+  [45, 150, 85],
+  [225, 190, 80],
+  [125, 120, 50],
+  [125, 100, 165],
+  [235, 110, 135],
+];
+export const MONSTER_COLORS: RGB[] = [
+  [230, 60, 30],
+  [110, 225, 200],
+  [150, 90, 40],
+  [200, 40, 160],
+];
+const FANTASY_NO_PEOPLE: RGB = [222, 218, 208];
+const entityColor = (e: number): RGB => (e < PEOPLE_COUNT ? PEOPLE_COLORS[e] : MONSTER_COLORS[e - PEOPLE_COUNT]);
+const FANTASY_RAMPS: Stop[][] = ENTITIES.map((name, e) => {
+  const base = WATER_ENTITIES.has(name) ? koppenSea(-2000) : mix(hypsometric(300), LAND_WASH, 0.55);
+  return [[0, base], [1, mix(base, entityColor(e), 0.85)]];
+});
+
+function peopleColor(world: World, i: number): RGB {
+  const rel = world.elevation[i] - world.seaLevel;
+  const p = world.fantasyPeople[i];
+  if (world.lake[i] >= 0) return LAKE_COLOR;
+  if (rel < 0) return p === FANTASY_NONE ? koppenSea(rel) : mix(koppenSea(rel), PEOPLE_COLORS[p], 0.4 + 0.6 * suitabilityAt(world.fantasy, i, p));
+  if (p === FANTASY_NONE) return FANTASY_NO_PEOPLE;
+  return mix(FANTASY_NO_PEOPLE, PEOPLE_COLORS[p], 0.4 + 0.6 * suitabilityAt(world.fantasy, i, p));
+}
+
+function suitabilityColor(world: World, cell: number, rel: number, e: number): RGB {
+  if (world.lake[cell] >= 0) return LAKE_COLOR;
+  if (WATER_ENTITIES.has(ENTITIES[e])) return rel < 0 ? ramp(FANTASY_RAMPS[e], suitabilityAt(world.fantasy, cell, e)) : mutedLand(rel);
+  return rel < 0 ? koppenSea(rel) : ramp(FANTASY_RAMPS[e], suitabilityAt(world.fantasy, cell, e));
+}
+
+const FANTASY_LAYERS: Layer[] = [
+  {
+    id: 'fantasy-peoples',
+    name: 'Fantasy peoples',
+    group: 'fantasy',
+    legend: {
+      kind: 'categories',
+      items: PEOPLES.map((name, k): { color: RGB; label: string } => ({ color: PEOPLE_COLORS[k], label: `${name}: ${ENTITY_TERMS[name].join(' × ')}` })).concat([
+        { color: FANTASY_NO_PEOPLE, label: 'no people: nothing passes 0.3' },
+      ]),
+      lines: ['Sandbox rules, not physics: each people takes the cells where the product of its four terms is highest and above 0.3, paler where the suitability is weaker; the merfolk live in the sea.'],
+    },
+    relief: 'light',
+    cellColor: (world, i) => peopleColor(world, i),
+    smooth: (world, px) => (relief(world, px) < 0 && world.fantasyPeople[px.cell] === FANTASY_NONE ? koppenSea(relief(world, px)) : peopleColor(world, px.cell)),
+  },
+  {
+    id: 'fantasy-lairs',
+    name: 'Monster lairs',
+    group: 'fantasy',
+    legend: {
+      kind: 'categories',
+      items: MONSTERS.map((name, m): { color: RGB; label: string } => ({ color: MONSTER_COLORS[m], label: `${LAIR_CODES[m]}: ${name} (${ENTITY_TERMS[name].join(' × ')})` })),
+      lines: ['Sandbox rules: up to six lairs per monster, its best cells at least 1,500 km apart, labeled best first.'],
+    },
+    relief: 'light',
+    cellColor: (world, i) => mutedLand(world.elevation[i] - world.seaLevel),
+    smooth: (world, px) => mutedLand(relief(world, px)),
+    marks: (world) => world.lairs.map((l) => ({ cell: l.cell, color: MONSTER_COLORS[l.monster] })),
+    labels: (world) => {
+      const rank = new Array<number>(MONSTER_COUNT).fill(0);
+      return world.lairs.map((l) => ({ cell: l.cell, text: `${LAIR_CODES[l.monster]}${++rank[l.monster]}` }));
+    },
+  },
+  ...ENTITIES.map((name, e): Layer => ({
+    id: `fantasy-${name.replace(' ', '-')}`,
+    name: `${name[0].toUpperCase()}${name.slice(1)} suitability`,
+    group: 'fantasy',
+    legend: { kind: 'ramp', stops: FANTASY_RAMPS[e], unit: `suitability 0 to 1 = ${ENTITY_TERMS[name].join(' × ')} (sandbox rules)` },
+    relief: 'light',
+    cellColor: (world, i) => suitabilityColor(world, i, world.elevation[i] - world.seaLevel, e),
+    smooth: (world, px) => suitabilityColor(world, px.cell, relief(world, px), e),
+  })),
+];
+LAYERS.push(...FANTASY_LAYERS);
 
 /** The land washed pale and the sea dim, so marks and potentials carry the color. */
 function mutedLand(rel: number): RGB {

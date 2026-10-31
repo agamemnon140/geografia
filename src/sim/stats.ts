@@ -6,6 +6,7 @@ import { DEG } from './grid/geometry.ts';
 import type { Grid } from './grid/grid.ts';
 import type { LakeInfo } from './hydrology/routing.ts';
 import { VEGETATION_NAMES } from './biosphere/flora.ts';
+import { PEOPLE_COUNT, MONSTER_COUNT, WATER_ENTITIES, PEOPLES, type LairInfo } from './fantasy/fantasy.ts';
 import { MINERAL_COUNT } from './resources/minerals.ts';
 import { LINEAGE_COUNT } from './tectonics/crust.ts';
 
@@ -106,6 +107,9 @@ export interface WorldStats {
   landmassesReached: number;
   landmassesTotal: number;
   dispersalMaxKa: number;
+  /** Fantasy (M28): share of the land each people dominates (of the sea for the merfolk), PEOPLES order; lairs per monster, MONSTERS order. */
+  fantasyShares: number[];
+  lairCounts: number[];
 }
 
 export interface ReliefFields {
@@ -164,10 +168,15 @@ export interface CivilizationStatsFields {
   cities: { cell: number; score: number }[];
 }
 
+export interface FantasyStatsFields {
+  people: Uint8Array;
+  lairs: LairInfo[];
+}
+
 /** Landmasses that count for the dispersal statistics, km^2. */
 export const DISPERSAL_LANDMASS_KM2 = 1e5;
 
-export function computeStats(grid: Grid, relief: ReliefFields, hydro: HydrologyFields, climate: ClimateFields, biome: BiomeFields, resources: ResourceFields, civ: CivilizationStatsFields): WorldStats {
+export function computeStats(grid: Grid, relief: ReliefFields, hydro: HydrologyFields, climate: ClimateFields, biome: BiomeFields, resources: ResourceFields, civ: CivilizationStatsFields, fantasy: FantasyStatsFields): WorldStats {
   const { elevation, areaKm2, seaLevel, crustType, thickness } = relief;
   const n = elevation.length;
   let total = 0;
@@ -315,6 +324,11 @@ export function computeStats(grid: Grid, relief: ReliefFields, hydro: HydrologyF
     else islands++;
     if (m > largestMass) largestMass = m;
   }
+  // Fantasy (M28): the area each people dominates, and the lairs per monster.
+  const peopleArea = new Float64Array(PEOPLE_COUNT);
+  for (let i = 0; i < n; i++) if (fantasy.people[i] < PEOPLE_COUNT) peopleArea[fantasy.people[i]] += areaKm2[i];
+  const lairCounts = new Array<number>(MONSTER_COUNT).fill(0);
+  for (const lair of fantasy.lairs) lairCounts[lair.monster]++;
   return {
     oceanFraction: ocean / total,
     landFraction: land / total,
@@ -388,6 +402,8 @@ export function computeStats(grid: Grid, relief: ReliefFields, hydro: HydrologyF
     landmassesReached: civ.landmassAreas.filter((a, m) => a >= DISPERSAL_LANDMASS_KM2 && reached[m]).length,
     landmassesTotal: civ.landmassAreas.filter((a) => a >= DISPERSAL_LANDMASS_KM2).length,
     dispersalMaxKa: dispersalMax,
+    fantasyShares: Array.from(peopleArea, (v, k) => (WATER_ENTITIES.has(PEOPLES[k]) ? (ocean > 0 ? v / ocean : 0) : land > 0 ? v / land : 0)),
+    lairCounts,
   };
 }
 

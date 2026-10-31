@@ -1,5 +1,6 @@
 import { computeFauna } from './biosphere/fauna.ts';
 import { computeCivilization, type CityInfo } from './civilization/civilization.ts';
+import { computeFantasy, type LairInfo } from './fantasy/fantasy.ts';
 import { computeFlora } from './biosphere/flora.ts';
 import { computeClimate } from './climate/climate.ts';
 import type { CirculationInfo } from './climate/circulation.ts';
@@ -179,6 +180,11 @@ export interface World {
   cities: CityInfo[];
   arrivalKa: FloatArray;
   origin: number;
+  /** Fantasy (M28, fantasy/fantasy.ts, a sandbox rule set): suitability per entity (cell-major, ENTITIES order), its four terms per entity (cell-major), the dominant people per cell (FANTASY_NONE where none), the monsters' lairs. */
+  fantasy: FloatArray;
+  fantasyTerms: FloatArray;
+  fantasyPeople: Uint8Array;
+  lairs: LairInfo[];
   circulation: CirculationInfo;
   /** Global mean sea-level temperature for this insolation and glacial phase, degrees C. */
   globalMeanTemperature: number;
@@ -210,6 +216,7 @@ export function worldBuffers(world: World): ArrayBuffer[] {
     world.npp, world.soil, world.soilAsh, world.soilAlluvium, world.soilLoss, world.vegetation,
     world.lineage, world.realm, world.endemism, world.richness, world.megafauna, world.landmass,
     world.habitability, world.habitabilityTerms, world.agriculture, world.citySite, world.cityTerms, world.arrivalKa,
+    world.fantasy, world.fantasyTerms, world.fantasyPeople,
   ];
   return arrays.map((a) => a.buffer as ArrayBuffer);
 }
@@ -393,6 +400,31 @@ export function finalize(ctx: BuildContext, state: ReliefState, onProgress: Prog
     deposits: minerals.deposits,
   });
 
+  // Fantasy (M28): the sandbox rules on everything above.
+  const fantasy = computeFantasy(grid, state, seaLevel, {
+    areaKm2,
+    radiusKm: params.radiusKm,
+    temperatureAnnual: climate.temperature.annual,
+    precipitation: hydro.precipitation,
+    discharge: hydro.discharge,
+    lake: hydro.lake,
+    iceSheet: climate.ice.iceSheet,
+    sstAnomaly: climate.ocean.sstAnomaly,
+    currentU: climate.ocean.currentU,
+    currentV: climate.ocean.currentV,
+    seaIceMonths: climate.ice.seaIceMonths,
+    npp: flora.npp,
+    vegetation: flora.vegetation,
+    agriculture: civilization.agriculture,
+    habitability: civilization.habitability,
+    habitabilityTerms: civilization.habitabilityTerms,
+    arrivalKa: civilization.arrivalKa,
+    deposits: minerals.deposits,
+    megafauna: fauna.megafauna,
+    cities: civilization.cities,
+    history: !ctx.noHistory,
+  });
+
   onProgress('stats', 0.96);
   const elevationCrust = new Float64Array(n);
   const elevationVolcanic = new Float64Array(n);
@@ -435,6 +467,7 @@ export function finalize(ctx: BuildContext, state: ReliefState, onProgress: Prog
     { seaIceMonths: climate.ice.seaIceMonths, iceSheet: climate.ice.iceSheet, koppen, npp: flora.npp, vegetation: flora.vegetation, realm: fauna.realm, endemism: fauna.endemism },
     { deposits: minerals.deposits },
     { arrivalKa: civilization.arrivalKa, landmass: fauna.landmass, landmassAreas: fauna.landmassAreas, cities: civilization.cities },
+    { people: fantasy.people, lairs: fantasy.lairs },
   );
 
   // The hydrology object is reused for the next keyframe, so its arrays are copied out.
@@ -524,6 +557,10 @@ export function finalize(ctx: BuildContext, state: ReliefState, onProgress: Prog
     cities: civilization.cities,
     arrivalKa: civilization.arrivalKa,
     origin: civilization.origin,
+    fantasy: fantasy.suitability,
+    fantasyTerms: fantasy.terms,
+    fantasyPeople: fantasy.people,
+    lairs: fantasy.lairs,
     circulation: climate.circulation,
     globalMeanTemperature: climate.globalMeanTemperature,
     plates: state.plates,

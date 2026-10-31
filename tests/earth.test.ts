@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { VEG_BOREAL, VEG_DESERT, VEG_ICE, VEG_RAINFOREST, VEG_TUNDRA } from '../src/sim/biosphere/flora.ts';
+import { ENTITIES, MONSTERS, suitabilityAt } from '../src/sim/fantasy/fantasy.ts';
 import { EARTH_DATA_PATH, EARTH_HISTORY_AGES, EARTH_HISTORY_PATH, EARTH_HISTORY_REFERENCE, buildEarth, buildEarthKeyframe, earthContext, earthElevationAt, parseEarthElevation, parseEarthHistory } from '../src/sim/earth.ts';
 import { DEG } from '../src/sim/grid/geometry.ts';
 import { Grid } from '../src/sim/grid/grid.ts';
@@ -123,6 +124,17 @@ describe('the real Earth reference', () => {
     expect(earth.lineageNames[0]).toMatch(/^largest landmass/);
     expect(earth.lineageNames[1]).toMatch(/^2nd largest landmass/);
     expect(earth.realmLabelCells[0]).toBeGreaterThanOrEqual(0);
+  });
+
+  it('puts the fantasy peoples where the usual fantasy would, from the real geography (M28)', () => {
+    const e = (name: string): number => ENTITIES.indexOf(name as (typeof ENTITIES)[number]);
+    // Dwarves in the Himalaya (no deposits shipped: mountain, thick crust and ruggedness alone; the model ices the plateau, which dwarves do not mind), merfolk in the warm shallow Persian Gulf.
+    expect(suitabilityAt(earth.fantasy, cellAt(33, 88), e('dwarves'))).toBeGreaterThan(0.3);
+    expect(suitabilityAt(earth.fantasy, cellAt(26, 52), e('merfolk'))).toBeGreaterThan(0.3);
+    // Sea serpents in the deep, dragons on the peaks, both with lairs; every field finite.
+    expect(earth.stats.lairCounts[MONSTERS.indexOf('sea serpents')]).toBeGreaterThan(0);
+    expect(earth.stats.lairCounts[MONSTERS.indexOf('dragons')]).toBeGreaterThan(0);
+    for (let i = 0; i < earth.n; i += 7) expect(Number.isFinite(earth.fantasy[i])).toBe(true);
   });
 
   it('finds the cradles of antiquity among the candidate cities and reaches every continent but Antarctica (M24)', () => {

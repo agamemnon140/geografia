@@ -11,6 +11,7 @@ import { CURRENT_MILESTONE, EARTH, PARAM_SPECS, PRESETS, type PlanetParams } fro
 import type { World } from '../sim/pipeline.ts';
 import { VEG_BOREAL, VEG_DESERT, VEG_MEDITERRANEAN, VEG_RAINFOREST, VEG_SAVANNA, VEG_SCRUB, VEG_SEASONAL, VEG_STEPPE, VEG_TEMPERATE, VEG_TEMPERATE_RAIN } from '../sim/biosphere/flora.ts';
 import { MINERALS, MINERAL_NAMES } from '../sim/resources/minerals.ts';
+import { LAIR_CODES, LAIR_COUNT, LAIR_SPACING_KM, MONSTERS, PEOPLES } from '../sim/fantasy/fantasy.ts';
 import type { WorldStats } from '../sim/stats.ts';
 import { SimClient } from '../worker/client.ts';
 import { explainCell, sampleName } from './explain.ts';
@@ -22,6 +23,15 @@ const GALLERY_SIZE = 6;
 const PREVIEW_DEBOUNCE_MS = 500;
 /** localStorage key of the "Beyond geography" toggle. */
 const BEYOND_KEY = 'geografia.beyond';
+/** The "Fantasy" toggle (M28), independent of the one above: the sandbox rules' layers, explain section and statistics rows. */
+const FANTASY_KEY = 'geografia.fantasy';
+/** The groups of the second dropdown and the toggle that shows each. */
+const GROUPS: { group: LayerGroup; label: string; toggle: 'beyond' | 'fantasy' }[] = [
+  { group: 'resources', label: 'Resources', toggle: 'beyond' },
+  { group: 'life', label: 'Life', toggle: 'beyond' },
+  { group: 'civilization', label: 'Civilization', toggle: 'beyond' },
+  { group: 'fantasy', label: 'Fantasy (sandbox rules)', toggle: 'fantasy' },
+];
 /** Timeline keyframes: one every KEYFRAME_INTERVAL_MA million years, at most KEYFRAMES per full build (fewer on the largest grids to bound memory); the interval widens when the age needs more (M25). */
 const KEYFRAME_INTERVAL_MA = 25;
 const KEYFRAMES = 8;
@@ -45,11 +55,8 @@ interface GalleryEntry {
 function template(): string {
   const presetOptions = PRESETS.map((p) => `<option value="${p.name}">${p.name}</option>`).join('');
   const layerOptions = layersOfGroup('geography').map((l) => `<option value="${l.id}">${l.name}</option>`).join('');
-  const beyondGroups: [LayerGroup, string][] = [['resources', 'Resources'], ['life', 'Life'], ['civilization', 'Civilization']];
-  const beyondOptions = '<option value="">— the geography layer above —</option>' + beyondGroups
-    .filter(([group]) => layersOfGroup(group).length > 0)
-    .map(([group, label]) => `<optgroup label="${label}">${layersOfGroup(group).map((l) => `<option value="${l.id}">${l.name}</option>`).join('')}</optgroup>`)
-    .join('');
+  // The optgroups beyond geography are filled at runtime from the toggles (renderGroupOptions).
+  const beyondOptions = '<option value="">— the geography layer above —</option>';
   const paramRows = PARAM_SPECS.map((s) => {
     const inactive = s.wiredIn > CURRENT_MILESTONE;
     const cls = inactive ? 'inactive' : '';
@@ -84,7 +91,8 @@ function template(): string {
         <h2>Layer</h2>
         <select id="layer">${layerOptions}</select>
         <label class="check"><input type="checkbox" id="beyond" /> Beyond geography: resources, life, civilization</label>
-        <select id="layerBeyond" class="hidden" title="Layers beyond the geography; choosing one here shows it instead of the layer above">${beyondOptions}</select>
+        <label class="check"><input type="checkbox" id="fantasy" /> Fantasy (sandbox rules): peoples and monsters</label>
+        <select id="layerBeyond" class="hidden" title="Layers beyond the geography and the fantasy rules; choosing one here shows it instead of the layer above">${beyondOptions}</select>
         <div id="sampleRow" class="row hidden">
           <label>Month <input type="range" id="sample" min="0" max="${SAMPLES}" step="1" value="${ANNUAL}" /></label>
           <span id="sampleLabel" class="unit">annual</span>
@@ -150,6 +158,7 @@ export function mountApp(root: HTMLElement): void {
   const status = q<HTMLDivElement>('#status');
   const layerSelect = q<HTMLSelectElement>('#layer');
   const beyondCheck = q<HTMLInputElement>('#beyond');
+  const fantasyCheck = q<HTMLInputElement>('#fantasy');
   const layerBeyond = q<HTMLSelectElement>('#layerBeyond');
   const sampleRow = q<HTMLDivElement>('#sampleRow');
   const sampleInput = q<HTMLInputElement>('#sample');
@@ -202,6 +211,10 @@ export function mountApp(root: HTMLElement): void {
   let sample = ANNUAL;
   /** The "Beyond geography" toggle (M21): off, the app shows geography only. Remembered per browser and in the link. */
   let beyond = localStorage.getItem(BEYOND_KEY) === '1' || new URLSearchParams(location.hash.slice(1)).get('beyond') === '1';
+  /** The "Fantasy" toggle (M28), on its own. */
+  let fantasy = localStorage.getItem(FANTASY_KEY) === '1' || new URLSearchParams(location.hash.slice(1)).get('fantasy') === '1';
+  /** Whether a layer group (or explain section) is on: geography always, fantasy by its toggle, the rest by the beyond toggle. */
+  const groupEnabled = (g?: LayerGroup): boolean => !g || g === 'geography' || (g === 'fantasy' ? fantasy : beyond);
   let previewTimer: ReturnType<typeof setTimeout> | null = null;
   let playTimer: ReturnType<typeof setInterval> | null = null;
   /** The history slider stays on the final world while keyframes arrive, until the user moves it. */
@@ -219,9 +232,9 @@ export function mountApp(root: HTMLElement): void {
 
   const pct = (v: number, digits = 1): string => `${(v * 100).toFixed(digits)} %`;
   /** The parameters as a link, with the toggle when it is on. */
-  const linkHash = (p: PlanetParams): string => paramsToHash(p) + (beyond ? '&beyond=1' : '');
+  const linkHash = (p: PlanetParams): string => paramsToHash(p) + (beyond ? '&beyond=1' : '') + (fantasy ? '&fantasy=1' : '');
   /** The layer on screen: the one beyond geography when chosen, else the geography one. */
-  const activeLayerId = (): string => (beyond && layerBeyond.value ? layerBeyond.value : layerSelect.value);
+  const activeLayerId = (): string => (layerBeyond.value && groupEnabled(layerById(layerBeyond.value).group) ? layerBeyond.value : layerSelect.value);
   const forestShare = (v: number[]): number => v[VEG_BOREAL] + v[VEG_TEMPERATE] + v[VEG_TEMPERATE_RAIN] + v[VEG_MEDITERRANEAN] + v[VEG_SEASONAL] + v[VEG_RAINFOREST];
   const grassShare = (v: number[]): number => v[VEG_STEPPE] + v[VEG_SAVANNA];
   const dryShare = (v: number[]): number => v[VEG_SCRUB] + v[VEG_DESERT];
@@ -248,6 +261,11 @@ export function mountApp(root: HTMLElement): void {
     ['Faunal realms', `${w.stats.realmCount} above a million km²${w.reference ? ' (by present connectivity: no history)' : ''}: ${realmList(w)}; mean endemism ${w.stats.meanEndemism.toFixed(2)}`],
     ['Candidate cities', w.cities.slice(0, 5).map((c, k) => `#${k + 1} site ${c.score.toFixed(2)} (habitability ${w.habitability[c.cell].toFixed(2)})`).join(', ') + ` (${w.stats.cityCount} on the city-site layer, ranked by the site score, not by habitability)`],
     ['Human dispersal', `${w.stats.landmassesReached} of ${w.stats.landmassesTotal} landmasses above 100,000 km² reached; the farthest ${w.stats.dispersalMaxKa.toFixed(0)} thousand years after the origin`],
+  ];
+  /** Rows shown with the fantasy toggle (M28). */
+  const fantasyRows = (w: World): [string, string][] => [
+    ['Fantasy peoples', PEOPLES.map((name, k) => `${name} ${pct(w.stats.fantasyShares[k], 0)}${name === 'merfolk' ? ' of the sea' : ''}`).join(', ') + ' of the land (sandbox rules: the dominant people above 0.3)'],
+    ['Monster lairs', MONSTERS.map((name, m) => `${name} ${w.stats.lairCounts[m]}`).join(', ') + ` (up to ${LAIR_COUNT} each, ${LAIR_SPACING_KM.toLocaleString()} km apart; the best ${w.lairs.length ? `${LAIR_CODES[w.lairs[0].monster]}1 at ${w.lairs[0].score.toFixed(2)}` : 'none'})`],
   ];
   const statRows = (w: World): [string, string][] => {
     const s: WorldStats = w.stats;
@@ -291,7 +309,7 @@ export function mountApp(root: HTMLElement): void {
 
   const renderStats = (): void => {
     if (!world) return;
-    const rows = (w: World): [string, string][] => (beyond ? statRows(w).concat(beyondRows(w)) : statRows(w));
+    const rows = (w: World): [string, string][] => statRows(w).concat(beyond ? beyondRows(w) : [], fantasy ? fantasyRows(w) : []);
     const a = rows(world);
     const b = view === 'compare' && compareWorld ? rows(compareWorld) : null;
     const head = b ? `<tr><th></th><th>A</th><th>B</th></tr>` : '';
@@ -304,7 +322,7 @@ export function mountApp(root: HTMLElement): void {
   const renderInspector = (cell: number, w: World = world as World, pane = ''): void => {
     if (!w) return;
     selectedCell = cell;
-    const sections = explainCell(w, cell, sample).filter((s) => !s.group || beyond);
+    const sections = explainCell(w, cell, sample).filter((s) => groupEnabled(s.group));
     if (pane) sections[0].title = `${pane}: ${sections[0].title}`;
     inspector.innerHTML = sections
       .map((section) => `<div class="section"><div class="section-title">${section.title}</div>${section.lines.map((l) => `<div>${l}</div>`).join('')}</div>`)
@@ -728,18 +746,36 @@ export function mountApp(root: HTMLElement): void {
     applyLayer();
   });
   layerBeyond.addEventListener('change', applyLayer);
-  const setBeyond = (on: boolean): void => {
-    beyond = on;
-    beyondCheck.checked = on;
-    layerBeyond.classList.toggle('hidden', !on);
-    localStorage.setItem(BEYOND_KEY, on ? '1' : '0');
-    if (!on) layerBeyond.value = '';
+  /** The optgroups of the second dropdown: only the groups whose toggle is on (M28); a pick in a group that went off is dropped. */
+  const renderGroupOptions = (): void => {
+    const picked = layerBeyond.value;
+    layerBeyond.innerHTML = '<option value="">— the geography layer above —</option>' + GROUPS
+      .filter(({ group, toggle }) => (toggle === 'beyond' ? beyond : fantasy) && layersOfGroup(group).length > 0)
+      .map(({ group, label }) => `<optgroup label="${label}">${layersOfGroup(group).map((l) => `<option value="${l.id}">${l.name}</option>`).join('')}</optgroup>`)
+      .join('');
+    layerBeyond.value = picked && groupEnabled(layerById(picked).group) ? picked : '';
+  };
+  /** Both toggles at once: the dropdown shows when either is on, each gates its own groups, both are remembered and travel in the link. */
+  const applyGroupToggles = (): void => {
+    beyondCheck.checked = beyond;
+    fantasyCheck.checked = fantasy;
+    layerBeyond.classList.toggle('hidden', !(beyond || fantasy));
+    localStorage.setItem(BEYOND_KEY, beyond ? '1' : '0');
+    localStorage.setItem(FANTASY_KEY, fantasy ? '1' : '0');
+    renderGroupOptions();
     applyLayer();
     renderStats();
     if (selectedCell >= 0 && world) renderInspector(selectedCell);
     if (location.hash) location.hash = linkHash(readParams());
   };
-  beyondCheck.addEventListener('change', () => setBeyond(beyondCheck.checked));
+  beyondCheck.addEventListener('change', () => {
+    beyond = beyondCheck.checked;
+    applyGroupToggles();
+  });
+  fantasyCheck.addEventListener('change', () => {
+    fantasy = fantasyCheck.checked;
+    applyGroupToggles();
+  });
   sampleInput.addEventListener('input', () => {
     sample = Number(sampleInput.value);
     sampleLabel.textContent = sampleName(sample);
@@ -789,7 +825,7 @@ export function mountApp(root: HTMLElement): void {
     if (compareWorld) renderInspector(cell, compareWorld, 'B');
   });
 
-  setBeyond(beyond);
+  applyGroupToggles();
   const initial = paramsFromHash(location.hash);
   setParams(initial ?? EARTH);
   if (initial) {

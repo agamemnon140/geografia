@@ -135,6 +135,18 @@ every push to `main` of https://github.com/agamemnon140/geografia). Local:
   (`renderLegend(layer, box, world)`); stats `realmShares`,
   `realmMainLandmass`; the City sites legend lists the scores and the rule;
   habitability shown beside a city's site score.
+- M28: fantasy, an explicit sandbox rule set behind its own checkbox
+  (`src/sim/fantasy/fantasy.ts`): six peoples (dwarves, elves, halflings,
+  orcs, giants, merfolk) and four monsters (dragons, sea serpents, trolls,
+  giant spiders), each a suitability per cell = product of four named terms
+  (`ENTITY_TERMS`) read from relief, crust, climate, rivers, vegetation,
+  NPP, fauna, deposits, habitability and the candidate cities; dominant
+  people above 0.3 (`fantasyPeople`), up to six lairs per monster 1,500 km
+  apart (`lairs`); layers Fantasy peoples, Monster lairs (labels Dr1...) and
+  ten suitability ramps (group `fantasy`); the app's `GROUPS` table maps
+  groups to the two toggles (`beyond=1`, `fantasy=1`), `groupEnabled` gates
+  dropdown, explain sections and stats rows; `scripts/diag-fantasy.ts
+  [preset|Real] [seed]`; `hopsFrom` exported from civilization.ts.
 
 ## Where things are
 
@@ -147,7 +159,7 @@ every push to `main` of https://github.com/agamemnon140/geografia). Local:
   `genesis.ts` (initial condition), `riftpath.ts`, `crust.ts` (constants
   with their justification), `plates.ts`, `parcels.ts`.
 - `src/sim/resources/minerals.ts` (M21), `src/sim/biosphere/flora.ts`
-  (M22), `src/sim/biosphere/fauna.ts` (M23); worlds without a tectonic history (the real Earth) carry
+  (M22), `src/sim/biosphere/fauna.ts` (M23), `src/sim/fantasy/fantasy.ts` (M28); worlds without a tectonic history (the real Earth) carry
   `BuildContext.noHistory`, which silences the rules that read the
   provenance.
 - `src/sim/hydrology/`, `src/sim/climate/` (ebm, temperature, circulation,
@@ -158,9 +170,9 @@ every push to `main` of https://github.com/agamemnon140/geografia). Local:
   `src/worker/` (protocol, worker, client).
 - `scripts/`: `render-png.ts out.png [preset|Real] [seed] [layer] [width]`,
   `render-globe.ts`, `diag-tectonics.ts`, `diag-climate.ts [Real]`,
-  `diag-resources.ts [preset] [seed]`, `diag-composition.ts [seed] [coarser]`, `convert-etopo5.ts`,
+  `diag-resources.ts [preset] [seed]`, `diag-composition.ts [seed] [coarser]`, `diag-fantasy.ts [preset|Real] [seed]`, `convert-etopo5.ts`,
   `convert-paleodem.ts`, `convert-mrds.ts <mrds.csv>`, `make-icons.ts`.
-- `tests/`: 25 files, 144 tests; CI budget for the full build is 60 s.
+- `tests/`: 26 files, 149 tests; CI budget for the full build is 60 s.
   `tests/minerals.test.ts` pins seed 2's ocean fraction, mean land
   elevation, mean temperature and sea level to the M20 values: anything
   that changes the geography fails it on purpose.
@@ -237,6 +249,12 @@ spikes after collisions; past greenhouse not applied to the Earth timeline.
 - Asked by the owner on 2026-10-31, for after M24: (1) choosing the
   planet's age since its Pangea before building, 0 to 400 million years
   (done in M25); (2) composition parameters that reach minerals, flora and
-  fauna (done in M26); (3) an optional fantasy layer, off by default, estimating
-  where typical fantasy peoples (dwarves, elves) and monsters would live
-  from the same geography, flora and fauna, as an explicit sandbox rule set.
+  fauna (done in M26); (3) an optional fantasy layer (done in M28). All three
+  shipped on 2026-10-31, with M27 (legible realms, city ranking explained).
+- After M28: the fantasy rules are a first draft meant to be edited (elves
+  take a third of the land, halflings one or two percent); the ore terms of
+  dwarves and dragons on the real Earth wait for the USGS deposits; a user
+  rule editor (weights and thresholds in the UI) would make the sandbox
+  explicit in the app itself; the realm map stays pale where faunas are
+  mixed (dominant share below 70% on most land) and could use a contrast
+  option.
