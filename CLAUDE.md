@@ -71,6 +71,17 @@ every push to `main` of https://github.com/agamemnon140/geografia). Local:
   passes (a prior pass one level coarser, then the final one); Sunshine
   (annual) and Cloud cover (seasonal) layers; A of the OLR is now the
   clear-sky 237 W/m2.
+- M21: resources and the UI beyond geography: seven mineral potentials
+  from the provenance (`src/sim/resources/minerals.ts`; shields, arcs,
+  collision belts; coal, oil and salt as parcel accumulators recorded
+  inside the loop in `deposit()` and at each fluvial pass) with deposits
+  drawn by a hash of the seed; the "Beyond geography" checkbox and a
+  second layer dropdown (Resources / Life / Civilization groups, `Layer.group`,
+  `Section.group`), so the app is unchanged when it is off; one-column
+  mobile layout under 820 px and pinch zoom on the map; the real Earth
+  takes measured deposits from `public/data/earth-minerals-1deg.u8` when
+  the file exists (`scripts/convert-mrds.ts`; the USGS server refused
+  automated downloads, so it is not shipped yet).
 
 ## Where things are
 
@@ -90,8 +101,12 @@ every push to `main` of https://github.com/agamemnon140/geografia). Local:
   `src/worker/` (protocol, worker, client).
 - `scripts/`: `render-png.ts out.png [preset|Real] [seed] [layer] [width]`,
   `render-globe.ts`, `diag-tectonics.ts`, `diag-climate.ts [Real]`,
-  `convert-etopo5.ts`, `convert-paleodem.ts`, `make-icons.ts`.
-- `tests/`: 20 files, 118 tests; CI budget for the full build is 60 s.
+  `diag-resources.ts [preset] [seed]`, `convert-etopo5.ts`,
+  `convert-paleodem.ts`, `convert-mrds.ts <mrds.csv>`, `make-icons.ts`.
+- `tests/`: 21 files, 121 tests; CI budget for the full build is 60 s.
+  `tests/minerals.test.ts` pins seed 2's ocean fraction, mean land
+  elevation, mean temperature and sea level to the M20 values: anything
+  that changes the geography fails it on purpose.
 
 ## Calibration state (Earth preset, 200 steps, several seeds)
 
@@ -140,6 +155,13 @@ spikes after collisions; past greenhouse not applied to the Earth timeline.
   moisture, hence the marine deck and the low ramp start.
 - `scripts/render-png.ts` prints the whole stats JSON; pipe it through
   `tail -3` in a session.
+- The Bash tool here fails to parse very long commands with several
+  heredocs; keep each heredoc under about 50 lines and large files go
+  through the Write tool. Constants used inside the `LAYERS` literal must
+  be declared above it (temporal dead zone at module load).
+- USGS data servers (mrdata.usgs.gov, sciencebase.gov) sit behind a
+  Cloudflare challenge: no automated download works; ask the owner to
+  download by hand.
 
 ## Candidates for what comes next
 
@@ -150,3 +172,12 @@ spikes after collisions; past greenhouse not applied to the Earth timeline.
   glacial carving and post-glacial flooding for fjords and archipelagos.
 - Earth timeline: apply a past greenhouse so the Cretaceous is warm.
 - Climate biases above (boreal cold, cool deserts, sea ice).
+- Asked by the owner on 2026-10-31, for after M24: (1) choosing the
+  planet's age since its Pangea before building, 0 to 400 million years
+  (the Tectonic age parameter exists; check its range and the build time
+  at 400 steps, and let the timeline keyframes follow); (2) composition
+  parameters that reach minerals, flora and fauna (atmospheric oxygen,
+  crustal iron and other abundances, with causal paths like the other
+  parameters); (3) an optional fantasy layer, off by default, estimating
+  where typical fantasy peoples (dwarves, elves) and monsters would live
+  from the same geography, flora and fauna, as an explicit sandbox rule set.

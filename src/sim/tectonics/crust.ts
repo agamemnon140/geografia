@@ -199,3 +199,21 @@ export function volcanicFactor(type: number): number {
 export function thicknessCap(relativeGravity: number): number {
   return THICKNESS_CAP_EARTH_KM / relativeGravity;
 }
+
+/**
+ * Resource bookkeeping inside the loop (M21). Sediment laid down in a lake
+ * or on a flood plain under a warm, wet climate is a swamp and counts toward
+ * coal (the Carboniferous forests grew where it was warmer than 15 C with
+ * more than a meter of rain); sediment laid down in a shallow warm sea over
+ * continental crust counts toward oil source rock (most source rocks formed
+ * on shelves of warm seas), a delta there counting half toward coal too.
+ * Closed-basin lakes whose evaporation outruns their inflow lay down
+ * evaporites: 10 m of salt per step at full deficit (the Messinian laid 2 km
+ * in under a million years; most basins are far slower).
+ */
+export const COAL_MIN_C = 15;
+export const COAL_MIN_MM = 1000;
+export const OIL_MIN_C = 18;
+export const SHELF_DEPTH_M = 500;
+export const DELTA_COAL_SHARE = 0.5;
+export const EVAPORITE_KM_PER_STEP = 0.01;

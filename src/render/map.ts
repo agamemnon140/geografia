@@ -46,6 +46,10 @@ export class MapView {
   private dragDx = 0;
   private dragDy = 0;
   private snapshot: HTMLCanvasElement | null = null;
+  /** Active pointers by id (client coordinates), for the two-finger pinch (M21). */
+  private pointers = new Map<number, [number, number]>();
+  private pinch: { startDistance: number; startZoom: number; anchor: [number, number] | null } | null = null;
+  private pinchFrame = false;
 
   constructor(canvas: HTMLCanvasElement, width = 1440, height = 720) {
     this.canvas = canvas;
@@ -150,13 +154,54 @@ export class MapView {
 
   /** Canvas pixel under a pointer event, accounting for object-fit: contain inside the element box. */
   private pixelOf(event: MouseEvent): [number, number] {
+    return this.pixelAt(event.clientX, event.clientY);
+  }
+
+  private pixelAt(clientX: number, clientY: number): [number, number] {
     const rect = this.canvas.getBoundingClientRect();
     const scale = Math.min(rect.width / this.width, rect.height / this.height);
     const drawnW = this.width * scale;
     const drawnH = this.height * scale;
     const offX = rect.left + (rect.width - drawnW) / 2;
     const offY = rect.top + (rect.height - drawnH) / 2;
-    return [(event.clientX - offX) / scale, (event.clientY - offY) / scale];
+    return [(clientX - offX) / scale, (clientY - offY) / scale];
+  }
+
+  /** Two fingers: zoom by their distance around their midpoint, which stays on the same point of the planet. */
+  private beginPinch(): void {
+    const [a, b] = Array.from(this.pointers.values());
+    const mid = this.pixelAt((a[0] + b[0]) / 2, (a[1] + b[1]) / 2);
+    this.pinch = {
+      startDistance: Math.max(1, Math.hypot(a[0] - b[0], a[1] - b[1])),
+      startZoom: this.viewport.zoom,
+      anchor: unprojectPixel(this.projection, mid[0], mid[1], this.width, this.height, this.viewport),
+    };
+    this.dragging = false;
+  }
+
+  private movePinch(): void {
+    if (!this.pinch || this.pointers.size < 2 || this.pinchFrame) return;
+    this.pinchFrame = true;
+    requestAnimationFrame(() => {
+      this.pinchFrame = false;
+      if (!this.pinch || this.pointers.size < 2) return;
+      const [a, b] = Array.from(this.pointers.values());
+      const distance = Math.hypot(a[0] - b[0], a[1] - b[1]);
+      const zoom = Math.min(16, Math.max(1, (this.pinch.startZoom * distance) / this.pinch.startDistance));
+      const next = clampViewport({ ...this.viewport, zoom });
+      const mid = this.pixelAt((a[0] + b[0]) / 2, (a[1] + b[1]) / 2);
+      const after = unprojectPixel(this.projection, mid[0], mid[1], this.width, this.height, next);
+      const before = this.pinch.anchor;
+      if (!before || !after) {
+        this.setView(next);
+        return;
+      }
+      this.setView({
+        zoom,
+        lon0: next.lon0 + (wrapDegrees(before[1] - after[1]) * 180) / Math.PI,
+        lat0: next.lat0 + ((before[0] - after[0]) * 180) / Math.PI,
+      });
+    });
   }
 
   private cssScale(): number {
@@ -194,6 +239,12 @@ export class MapView {
 
   private startDrag(event: PointerEvent): void {
     if (!this.world) return;
+    this.pointers.set(event.pointerId, [event.clientX, event.clientY]);
+    this.canvas.setPointerCapture(event.pointerId);
+    if (this.pointers.size >= 2) {
+      this.beginPinch();
+      return;
+    }
     this.dragging = true;
     this.dragStartX = event.clientX;
     this.dragStartY = event.clientY;
@@ -211,6 +262,11 @@ export class MapView {
   }
 
   private moveDrag(event: PointerEvent): void {
+    if (this.pointers.has(event.pointerId)) this.pointers.set(event.pointerId, [event.clientX, event.clientY]);
+    if (this.pinch) {
+      this.movePinch();
+      return;
+    }
     if (!this.dragging || !this.snapshot) return;
     const scale = this.cssScale();
     this.dragDx = (event.clientX - this.dragStartX) / scale;
@@ -228,11 +284,26 @@ export class MapView {
   }
 
   private cancelDrag(): void {
+    this.pointers.clear();
+    this.pinch = null;
     this.dragging = false;
     this.draw();
   }
 
+  /** A finger lifted during a pinch ends it without a click or a drag. */
+  private endPinch(event: PointerEvent): boolean {
+    this.pointers.delete(event.pointerId);
+    if (!this.pinch) return false;
+    if (this.pointers.size < 2) {
+      this.pinch = null;
+      this.dragging = false;
+      this.draw();
+    }
+    return true;
+  }
+
   private endDrag(event: PointerEvent): void {
+    if (this.endPinch(event)) return;
     if (!this.dragging || !this.world) return;
     this.dragging = false;
     const moved = Math.abs(this.dragDx) >= CLICK_SLOP_PX || Math.abs(this.dragDy) >= CLICK_SLOP_PX;

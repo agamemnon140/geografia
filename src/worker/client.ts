@@ -46,13 +46,16 @@ export class SimClient {
     });
   }
 
-  /** The real Earth from the shipped elevation bytes, and its past from the history bytes when given (both transferred to the worker). */
-  buildEarth(elevation: ArrayBuffer, callbacks: BuildCallbacks = {}, history?: ArrayBuffer): Promise<BuildResult> {
+  /** The real Earth from the shipped elevation bytes, its past from the history bytes and its deposits from the minerals bytes when given (all transferred to the worker). */
+  buildEarth(elevation: ArrayBuffer, callbacks: BuildCallbacks = {}, history?: ArrayBuffer, minerals?: ArrayBuffer): Promise<BuildResult> {
     const id = this.nextId++;
     return new Promise((resolve, reject) => {
       this.pending.set(id, { ...callbacks, resolve, reject, done: false });
-      const request: WorkerRequest = { type: 'earth', id, elevation, history };
-      this.worker.postMessage(request, history ? [elevation, history] : [elevation]);
+      const request: WorkerRequest = { type: 'earth', id, elevation, history, minerals };
+      const transfer = [elevation];
+      if (history) transfer.push(history);
+      if (minerals) transfer.push(minerals);
+      this.worker.postMessage(request, transfer);
     });
   }
 

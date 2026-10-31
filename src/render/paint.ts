@@ -2,7 +2,7 @@ import { ANNUAL } from '../sim/climate/insolation.ts';
 import { Grid } from '../sim/grid/grid.ts';
 import type { FloatArray, World } from '../sim/pipeline.ts';
 import type { RGB } from './colors.ts';
-import { RIVER_COLOR, RIVER_MIN_KM3, type Layer } from './layers.ts';
+import { RIVER_COLOR, RIVER_MIN_KM3, type Layer, type Mark } from './layers.ts';
 import { strokeSegment } from './lines.ts';
 import { FULL_VIEW, equalEarthMetersPerPixel, equirectRaster, latLonToPixel, projectLatLon, projectionRaster, type ProjectionId, type Raster, type Viewport } from './raster.ts';
 
@@ -123,6 +123,42 @@ export function paintSmooth(world: World, raster: Raster, layer: Layer, out: Uin
     }
   }
   if (layer.rivers && options.project) drawRivers(world, raster, out, options.project, options.pixelsPerCell ?? 10);
+  if (layer.marks && options.project) drawMarks(raster, out, layer.marks(world), options.project, options.pixelsPerCell ?? 10);
+}
+
+/** Marks (deposits, sites) as filled discs with a dark rim, a third of a cell wide and at least a few pixels. */
+function drawMarks(raster: Raster, out: Uint8ClampedArray, marks: Mark[], project: (cell: number) => [number, number] | null, pixelsPerCell: number): void {
+  const { width, height } = raster;
+  const r = Math.max(2.5, 0.35 * pixelsPerCell);
+  const rim = r + 1;
+  for (const mark of marks) {
+    const p = project(mark.cell);
+    if (!p) continue;
+    const [cx, cy] = p;
+    if (cx < -rim || cy < -rim || cx > width + rim || cy > height + rim) continue;
+    const x0 = Math.max(0, Math.floor(cx - rim));
+    const x1 = Math.min(width - 1, Math.ceil(cx + rim));
+    const y0 = Math.max(0, Math.floor(cy - rim));
+    const y1 = Math.min(height - 1, Math.ceil(cy + rim));
+    for (let y = y0; y <= y1; y++) {
+      for (let x = x0; x <= x1; x++) {
+        const p2 = y * width + x;
+        if (raster.cell[p2] < 0) continue;
+        const d = Math.hypot(x + 0.5 - cx, y + 0.5 - cy);
+        if (d > rim) continue;
+        const o = p2 * 4;
+        if (d > r) {
+          out[o] = 20;
+          out[o + 1] = 20;
+          out[o + 2] = 24;
+        } else {
+          out[o] = mark.color[0];
+          out[o + 1] = mark.color[1];
+          out[o + 2] = mark.color[2];
+        }
+      }
+    }
+  }
 }
 
 /** Projection, pixel scale and river scale of an equirectangular window of the given size. */

@@ -28,6 +28,10 @@ export class ParcelPool {
   /** Surface lowered by erosion over the parcel's life, meters (provenance for the inspector). */
   eroded: Float64Array;
   orogenyStep: Int32Array;
+  /** Resource bookkeeping (M21), km of sediment: laid down in warm wet swamps (coal), in warm shallow seas (oil source rock), and evaporites of closed basins (salt); carried by the plate like the sediment. */
+  coal: Float64Array;
+  oil: Float64Array;
+  salt: Float64Array;
   frameIndex: Int32Array[];
 
   constructor(n: number, plateCount: number) {
@@ -43,6 +47,9 @@ export class ParcelPool {
     this.sediment = new Float64Array(this.capacity);
     this.eroded = new Float64Array(this.capacity);
     this.orogenyStep = new Int32Array(this.capacity);
+    this.coal = new Float64Array(this.capacity);
+    this.oil = new Float64Array(this.capacity);
+    this.salt = new Float64Array(this.capacity);
     this.frameIndex = [];
     for (let p = 0; p < plateCount; p++) this.frameIndex.push(new Int32Array(n).fill(-1));
   }
@@ -66,6 +73,9 @@ export class ParcelPool {
     this.sediment[id] = 0;
     this.eroded[id] = 0;
     this.orogenyStep[id] = -1;
+    this.coal[id] = 0;
+    this.oil[id] = 0;
+    this.salt[id] = 0;
     this.frameIndex[plate][frameCell] = id;
     return id;
   }
@@ -107,6 +117,9 @@ export class ParcelPool {
     this.volcanic = grow64(this.volcanic);
     this.sediment = grow64(this.sediment);
     this.eroded = grow64(this.eroded);
+    this.coal = grow64(this.coal);
+    this.oil = grow64(this.oil);
+    this.salt = grow64(this.salt);
     this.capacity = cap;
   }
 }

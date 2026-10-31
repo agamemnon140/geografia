@@ -14,13 +14,17 @@ import {
   ARC_RADIUS,
   ARC_RATE_KM,
   BUOYANT_THICKNESS_KM,
+  COAL_MIN_C,
+  COAL_MIN_MM,
   COLLISION_BRAKE,
   COLLISION_SATURATION_CELLS,
   CONTINENTAL,
   CONTINENTAL_BASE_M,
   CONTINENTAL_THICKNESS_KM,
   CRUST_DIFFUSION,
+  DELTA_COAL_SHARE,
   EROSION_RATE,
+  EVAPORITE_KM_PER_STEP,
   FLOW_RATE,
   FLOW_STAMP_KM,
   FLOW_THRESHOLD_KM,
@@ -35,9 +39,11 @@ import {
   MERGE_LOCK_STEPS,
   MERGE_MIN_SUTURE,
   MIN_THRUST_KM,
+  OIL_MIN_C,
   PLATE_EVENT_INTERVAL,
   POLE_WALK_INTERVAL,
   RIFT_LOCK_STEPS,
+  SHELF_DEPTH_M,
   RIFT_MIN_CONTINENT_FRACTION,
   RIFT_MIN_THICKNESS_KM,
   RIFT_POLE_MARGIN,
@@ -1024,6 +1030,9 @@ export class TectonicsSim {
     }
     pool.volcanic[keep] = Math.min(VOLCANIC_CAP_KM, pool.volcanic[keep] + pool.volcanic[gone]);
     pool.sediment[keep] = Math.min(SEDIMENT_CAP_KM, pool.sediment[keep] + pool.sediment[gone]);
+    pool.coal[keep] += pool.coal[gone];
+    pool.oil[keep] += pool.oil[gone];
+    pool.salt[keep] += pool.salt[gone];
     pool.eroded[keep] = Math.max(pool.eroded[keep], pool.eroded[gone]);
     pool.age[keep] = Math.min(pool.age[keep], pool.age[gone]);
     this.spreadExcess(keep);
@@ -1204,6 +1213,10 @@ export class TectonicsSim {
       pool.orogenyStep[winner] = this.step;
       pool.volcanic[winner] = Math.min(VOLCANIC_CAP_KM, pool.volcanic[winner] + pool.volcanic[loser]);
       pool.sediment[winner] = Math.min(SEDIMENT_CAP_KM, pool.sediment[winner] + pool.sediment[loser]);
+      // The suture keeps the swamps and salt of both sides; oil is cooked out of half of it.
+      pool.coal[winner] += pool.coal[loser];
+      pool.oil[winner] += 0.5 * pool.oil[loser];
+      pool.salt[winner] += pool.salt[loser];
       this.spreadExcess(winner);
       // Continental collision resists: both plates slow down (India after hitting Eurasia); applied per step.
       this.tally.collisions++;
@@ -1214,6 +1227,9 @@ export class TectonicsSim {
       this.addArc(winner);
       this.shortenMargin(winner);
       pool.sediment[winner] = Math.min(SEDIMENT_CAP_KM, pool.sediment[winner] + 0.5 * pool.sediment[loser]);
+      // The accretionary prism scrapes half of the sea floor's organic sediment onto the margin.
+      pool.coal[winner] += 0.5 * pool.coal[loser];
+      pool.oil[winner] += 0.5 * pool.oil[loser];
     }
     pool.release(loser);
   }
@@ -1676,13 +1692,16 @@ export class TectonicsSim {
    * stage, used by the fluvial passes instead of the proxy until replaced;
    * null restores the proxy (DESIGN 9.1: real precipitation inside the loop).
    */
-  setPrecipitation(precipitation: Float64Array | null, evaporation: Float64Array | null): void {
+  setPrecipitation(precipitation: Float64Array | null, evaporation: Float64Array | null, temperature: Float64Array | null = null): void {
     this.externalPrecipitation = precipitation;
     this.externalEvaporation = evaporation;
+    this.externalTemperature = temperature;
   }
 
   private externalPrecipitation: Float64Array | null = null;
   private externalEvaporation: Float64Array | null = null;
+  /** Annual-mean surface temperature from the in-loop climate, for the resource bookkeeping (M21). */
+  private externalTemperature: Float64Array | null = null;
 
   private erodeFluvial(): void {
     const grid = this.grid;
@@ -1695,6 +1714,7 @@ export class TectonicsSim {
       hydro.applyProxyPrecipitation(this.elevation, this.seaLevel);
     }
     hydro.run(this.elevation, this.seaLevel);
+    this.recordEvaporites();
     const elevation = this.elevation;
     const sea = this.seaLevel;
     const down = hydro.downstream;
@@ -1736,6 +1756,7 @@ export class TectonicsSim {
       if (room <= 0) return 0;
       const put = room < amount ? room : amount;
       pool.sediment[i] += put;
+      this.recordDeposit(cell, i, put);
       elevation[cell] += put * SEDIMENT_M_PER_KM;
       return put;
     };
@@ -1751,6 +1772,46 @@ export class TectonicsSim {
       }
     }
     if (lowest >= 0) rest -= fill(lowest, rest);
+  }
+
+  /**
+   * Resource bookkeeping of a delta fill (M21, constants in crust.ts):
+   * sediment laid down in a lake or on a flood plain under a warm, wet
+   * climate is a swamp and counts toward coal; sediment laid down in a
+   * shallow warm sea over continental crust counts toward oil source rock,
+   * and half toward coal when the climate is a swamp's. Both ride with the
+   * parcel. The in-loop climate supplies temperature and precipitation;
+   * before its first update nothing is recorded.
+   */
+  private recordDeposit(cell: number, parcel: number, km: number): void {
+    const t = this.externalTemperature;
+    const p = this.externalPrecipitation;
+    if (!t || !p) return;
+    const pool = this.pool;
+    const swamp = t[cell] > COAL_MIN_C && p[cell] > COAL_MIN_MM;
+    if (this.elevation[cell] >= this.seaLevel) {
+      if (swamp) pool.coal[parcel] += km;
+    } else if (pool.crustType[parcel] === CONTINENTAL && this.seaLevel - this.elevation[cell] < SHELF_DEPTH_M) {
+      if (t[cell] > OIL_MIN_C) pool.oil[parcel] += km;
+      if (swamp) pool.coal[parcel] += km * DELTA_COAL_SHARE;
+    }
+  }
+
+  /** Closed-basin lakes whose evaporation outruns their inflow lay down evaporites (M21): salt on the parcels of their cells, per fluvial pass. */
+  private recordEvaporites(): void {
+    const hydro = this.hydrology;
+    const lakes = hydro.lakes;
+    const lake = hydro.lake;
+    const pool = this.pool;
+    const claim = this.wParcel;
+    for (let j = 0; j < this.grid.n; j++) {
+      const id = lake[j];
+      if (id < 0) continue;
+      const info = lakes[id];
+      if (!info.endorheic || info.evaporationFullKm3 <= 0) continue;
+      const deficit = 1 - Math.min(1, info.inflowKm3 / info.evaporationFullKm3);
+      pool.salt[claim[j]] += EVAPORITE_KM_PER_STEP * FLUVIAL_INTERVAL * deficit;
+    }
   }
 
   /**

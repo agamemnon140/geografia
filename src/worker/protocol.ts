@@ -4,7 +4,7 @@ import type { BuildOptions, World } from '../sim/pipeline.ts';
 export type WorkerRequest =
   | { type: 'build'; id: number; params: PlanetParams; options?: BuildOptions }
   /** The real Earth from the shipped elevation file (its bytes, transferred), and its past from the history file when given. */
-  | { type: 'earth'; id: number; elevation: ArrayBuffer; history?: ArrayBuffer };
+  | { type: 'earth'; id: number; elevation: ArrayBuffer; history?: ArrayBuffer; minerals?: ArrayBuffer };
 
 /**
  * A build answers with progress messages, then `done` with the final world,

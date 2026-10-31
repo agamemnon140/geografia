@@ -65,7 +65,7 @@ The Real Earth button builds the measured relief (NOAA ETOPO5 at half a degree) 
 
 ## 7. Known deviations
 
-The boreal belt runs 5 to 9 C too cold, so tundra replaces taiga; the subtropical deserts are too cool (clear skies are not in the balance); permanent sea ice is overestimated; planets with their land clustered in one hemisphere come out one to three degrees colder and more arid than Earth; plate boundaries are jagged at the cell scale; a few dozen one-cell suture spikes remain after collisions; the past greenhouse (the Cretaceous had several times today's CO2) is not applied to the Earth's history, so its past climates come out cooler than they were; the reconstructions are at one degree and infer coastlines and bathymetry.
+The boreal belt runs 3 to 7 C too cold, so tundra replaces taiga (London 4 C against 11; it was 1 before the clouds); the subtropical deserts are still 5 to 7 C too cool (the Sahara 19 against 26; it was 14); permanent sea ice is overestimated; the polar plateaus get too much rain and therefore too much cloud, and regions the moisture model leaves too dry (Japan, the Pampas) come out too sunny; the seven resources are the only ones, shield ores fill whole shields rather than a few provinces, and the real Earth shows no deposits until the measured data is converted; planets with their land clustered in one hemisphere come out one to three degrees colder and more arid than Earth; plate boundaries are jagged at the cell scale; a few dozen one-cell suture spikes remain after collisions; the past greenhouse (the Cretaceous had several times today's CO2) is not applied to the Earth's history, so its past climates come out cooler than they were; the reconstructions are at one degree and infer coastlines and bathymetry.
 
 ## 8. Why it is built this way
 
@@ -77,6 +77,16 @@ The boreal belt runs 5 to 9 C too cold, so tundra replaces taiga; the subtropica
 - **Energy balance instead of prescribed temperatures.** A climate solved from absorbed sunlight and outgoing radiation responds to insolation, greenhouse, pressure, albedo and geography, so the parameters mean something and a snowball or a hothouse emerges rather than being drawn.
 - **Low platforms and Budyko runoff.** Where the surface lies within 200 m of the sea, small differences decide land from water, which is where intricate coasts come from; rivers that only flow where rain exceeds evaporation keep deserts dry.
 - **Calibration against the real Earth.** Every link is run on the measured relief, and the numbers above are the honest residue: the places where the model is still wrong are listed, not hidden.
+
+## 9. Beyond geography: resources
+
+Everything past the physical geography sits behind the "Beyond geography" checkbox, so whoever wants only the planet sees only the planet. Switched on, a second layer menu appears with the layers beyond, the explain drawer gains their sections and the statistics their rows.
+
+**Minerals from the provenance.** Seven resources get a potential from 0 to 1 in every cell, each read from what the tectonic history recorded, never painted. Shields, the continental crust that has been there since the planet's start, never thinned by rifting and not in a collision for sixty steps, carry iron (the banded iron formations) and uranium (the granites of old cratons), as provinces within the shield rather than the whole of it, and uranium also in the sandstone basins beside them. Volcanic arcs over subduction carry copper, strongest within three cells of their trench and once erosion has cut into them. Collision belts thicker than 42 km carry gold and tin, again once exposed. Coal, oil and salt are bookkept on the crust parcels while the loop runs, so they travel with the plates: sediment laid down in a lake or on a flood plain where it is warmer than 15 °C with more than a meter of rain is a swamp and counts toward coal; sediment laid down in a sea shallower than 500 m over continental crust warmer than 18 °C counts toward oil source rock, which later needs burial; closed-basin lakes whose evaporation outruns their inflow lay down salt. A collision keeps both sides' coal and salt and cooks out half of the oil; a subduction scrapes half of the sea floor's organic sediment onto the margin.
+
+**Deposits from potentials.** Real deposits are sparse points. Cell by cell, a hash of the seed is compared with the potential, so a planet gets fixed, sparse deposits that are dense where the potential is high and absent where it is zero, and nothing about the geography changes. On the Earth preset a planet gets a few hundred deposits of each resource: copper along the arcs, coal on the deltas and lake shores, salt in the closed basins of the interiors, gold in the collision belts, iron and uranium in the old interiors.
+
+**The real Earth** has no tectonic history here, so its potentials are zero; it shows measured deposits from the USGS Mineral Resources Data System once that public-domain file has been converted and shipped, and says "not available" until then.
 `;
 
 /** Render the markdown subset above to HTML. */

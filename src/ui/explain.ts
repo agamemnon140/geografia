@@ -1,7 +1,8 @@
-import { cloudAt, koppenName, precipitationAt, temperatureAt, windAt } from '../render/layers.ts';
+import { cloudAt, koppenName, precipitationAt, temperatureAt, windAt, type LayerGroup } from '../render/layers.ts';
 import { ANNUAL, SAMPLES } from '../sim/climate/insolation.ts';
 import { Grid, cellAreasKm2 } from '../sim/grid/grid.ts';
 import type { World } from '../sim/pipeline.ts';
+import { MINERALS, MINERAL_COUNT, MINERAL_NAMES } from '../sim/resources/minerals.ts';
 import { BOUNDARY_NAMES } from '../sim/tectonics/simulation.ts';
 
 /**
@@ -13,6 +14,8 @@ import { BOUNDARY_NAMES } from '../sim/tectonics/simulation.ts';
 export interface Section {
   title: string;
   lines: string[];
+  /** Sections beyond geography are shown only when the app's "Beyond geography" toggle is on. */
+  group?: LayerGroup;
 }
 
 const RAD = 180 / Math.PI;
@@ -136,6 +139,26 @@ export function explainCell(world: World, cell: number, sample: number): Section
     `ice         ${world.iceSheet[cell] ? 'ice sheet' : months >= SAMPLES ? 'sea ice all year' : months > 0 ? `sea ice ${months} months a year` : 'none'}`,
   );
   sections.push({ title: 'Biome', lines: biome });
+
+  // Resources (M21): each potential with the provenance behind it.
+  const n = world.n;
+  const bits = world.deposits[cell];
+  const resources: string[] = [];
+  for (let m = 0; m < MINERAL_COUNT; m++) {
+    const p = world.mineralPotential[m * n + cell];
+    const has = (bits >> m) & 1;
+    if (p < 0.005 && !has) continue;
+    resources.push(`${MINERAL_NAMES[MINERALS[m]].padEnd(13)}${has ? 'deposit; ' : ''}potential ${p.toFixed(2)}`);
+  }
+  if (resources.length === 0) {
+    resources.push(world.reference ? 'no measured deposit here' : 'none: no shield, arc, collision belt, swamp, shallow sea or salt pan in this cell\'s history');
+  }
+  if (!world.reference) {
+    resources.push(
+      `history     swamp sediment ${world.coal[cell].toFixed(2)} km, shallow-sea sediment ${world.oil[cell].toFixed(2)} km, evaporite ${world.salt[cell].toFixed(3)} km`,
+    );
+  }
+  sections.push({ title: 'Resources', lines: resources, group: 'resources' });
 
   return sections;
 }

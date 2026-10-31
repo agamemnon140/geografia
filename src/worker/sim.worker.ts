@@ -1,4 +1,4 @@
-import { EARTH_HISTORY_AGES, buildEarth, buildEarthKeyframe, earthContext, parseEarthElevation, parseEarthHistory } from '../sim/earth.ts';
+import { EARTH_HISTORY_AGES, buildEarth, buildEarthKeyframe, earthContext, earthDeposits, parseEarthElevation, parseEarthHistory } from '../sim/earth.ts';
 import { buildHistory, compactWorld, finalize, worldBuffers } from '../sim/pipeline.ts';
 import type { WorkerRequest, WorkerResponse } from './protocol.ts';
 
@@ -18,7 +18,8 @@ scope.onmessage = (event) => {
   try {
     if (request.type === 'earth') {
       const context = earthContext();
-      const world = buildEarth(parseEarthElevation(request.elevation), progress, context);
+      const deposits = request.minerals ? earthDeposits(context.grid, request.minerals) : undefined;
+      const world = buildEarth(parseEarthElevation(request.elevation), progress, context, deposits);
       scope.postMessage({ type: 'done', id: request.id, world, elapsedMs: performance.now() - started }, worldBuffers(world));
       // The real past follows the present: each reconstructed relief gets its climate now, oldest first.
       const historyStart = performance.now();

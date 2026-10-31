@@ -9,6 +9,7 @@ import { Grid, cellAreasKm2, levelForRadius } from './grid/grid.ts';
 import { Hydrology, type LakeInfo } from './hydrology/routing.ts';
 import { solveSeaLevel, waterVolumeBelow } from './hypsometry.ts';
 import { validateParams, waterVolumeKm3, type PlanetParams } from './params.ts';
+import { MINERAL_COUNT, computeMinerals } from './resources/minerals.ts';
 import { Rng } from './rng/xoshiro.ts';
 import { computeStats, type WorldStats } from './stats.ts';
 import { SEDIMENT_M_PER_KM, convergentDepression, crustElevation, volcanicFactor } from './tectonics/crust.ts';
@@ -75,6 +76,14 @@ export interface World {
   orogenyStep: Int32Array;
   /** Boundary type, see BOUNDARY_* in tectonics/simulation.ts. */
   boundary: Uint8Array;
+  /** Resource bookkeeping carried by the parcels (M21), km of sediment: swamp (coal), warm shallow-sea (oil source rock), evaporite (salt). */
+  coal: FloatArray;
+  oil: FloatArray;
+  salt: FloatArray;
+  /** Mineral potential per mineral and cell, mineral-major in resources/minerals.ts MINERALS order, 0 to 1. */
+  mineralPotential: FloatArray;
+  /** Bit m set where mineral m has a deposit (drawn from the potential, or measured on the real Earth). */
+  deposits: Uint8Array;
   /** Annual precipitation from the moisture model, mm per year. */
   precipitation: FloatArray;
   /** Precipitation per sample, mm per year. */
@@ -157,6 +166,7 @@ export function worldBuffers(world: World): ArrayBuffer[] {
     world.elevation, world.elevationCrust, world.elevationVolcanic, world.elevationSediment, world.elevationTrench,
     world.plate, world.crustType, world.thickness, world.crustAge,
     world.volcanic, world.sediment, world.eroded, world.orogenyStep, world.boundary,
+    world.coal, world.oil, world.salt, world.mineralPotential, world.deposits,
     world.precipitation, world.precipitationSamples, world.evaporation,
     world.precipitationOrographic, world.precipitationConvergence,
     world.discharge, world.downstream, world.waterLevel, world.lake, world.mouth, world.riverLength,
@@ -193,6 +203,10 @@ export interface ReliefState {
   eroded: Float64Array;
   orogenyStep: Int32Array;
   boundary: Uint8Array;
+  /** Resource bookkeeping carried by the parcels (M21), km of sediment: swamp (coal), warm shallow-sea (oil source rock), evaporite (salt). */
+  coal: Float64Array;
+  oil: Float64Array;
+  salt: Float64Array;
   plates: PlateInfo[];
   hotspots: number[];
   events: TectonicEvent[];
@@ -210,6 +224,9 @@ export function snapshotSim(sim: TectonicsSim): ReliefState {
   const sediment = new Float64Array(n);
   const eroded = new Float64Array(n);
   const orogenyStep = new Int32Array(n);
+  const coal = new Float64Array(n);
+  const oil = new Float64Array(n);
+  const salt = new Float64Array(n);
   for (let j = 0; j < n; j++) {
     const i = claim[j];
     crustType[j] = pool.crustType[i];
@@ -219,6 +236,9 @@ export function snapshotSim(sim: TectonicsSim): ReliefState {
     sediment[j] = pool.sediment[i];
     eroded[j] = pool.eroded[i];
     orogenyStep[j] = pool.orogenyStep[i];
+    coal[j] = pool.coal[i];
+    oil[j] = pool.oil[i];
+    salt[j] = pool.salt[i];
   }
   return {
     step: sim.step,
@@ -233,6 +253,9 @@ export function snapshotSim(sim: TectonicsSim): ReliefState {
     eroded,
     orogenyStep,
     boundary: Uint8Array.from(sim.boundary),
+    coal,
+    oil,
+    salt,
     plates: sim.plates.map((p) => ({ axis: [p.axis[0], p.axis[1], p.axis[2]], rate: p.rate })),
     hotspots: Array.from(sim.hotspots),
     events: sim.events.map((e) => ({ ...e })),
@@ -249,6 +272,8 @@ export interface BuildContext {
   hydro: Hydrology;
   /** Use this sea level instead of solving it from the water inventory (the real Earth's datum is zero). */
   seaLevelOverride?: number;
+  /** Measured deposits per cell (bit per mineral) for a world without a tectonic history (the real Earth); potentials stay zero. */
+  measuredDeposits?: Uint8Array;
 }
 
 /** Hydrology, climate, ice, biomes and statistics on a relief state (everything after the tectonic loop). */
@@ -281,6 +306,11 @@ export function finalize(ctx: BuildContext, state: ReliefState, onProgress: Prog
 
   onProgress('biomes', 0.94);
   const koppen = classifyKoppen(grid, state.elevation, seaLevel, climate.temperature.samples, climate.moisture.samples);
+
+  // Resources from the provenance (M21); measured ones for a world without a history.
+  const minerals = ctx.measuredDeposits
+    ? { potential: new Float64Array(MINERAL_COUNT * n), deposits: ctx.measuredDeposits }
+    : computeMinerals(grid, state, seaLevel, params.seed, params.radiusKm);
 
   onProgress('stats', 0.96);
   const elevationCrust = new Float64Array(n);
@@ -322,6 +352,7 @@ export function finalize(ctx: BuildContext, state: ReliefState, onProgress: Prog
       cloudLongwave: climate.temperature.cloudLongwave,
     },
     { seaIceMonths: climate.ice.seaIceMonths, iceSheet: climate.ice.iceSheet, koppen },
+    { deposits: minerals.deposits },
   );
 
   // The hydrology object is reused for the next keyframe, so its arrays are copied out.
@@ -349,6 +380,11 @@ export function finalize(ctx: BuildContext, state: ReliefState, onProgress: Prog
     eroded: state.eroded,
     orogenyStep: state.orogenyStep,
     boundary: state.boundary,
+    coal: state.coal,
+    oil: state.oil,
+    salt: state.salt,
+    mineralPotential: minerals.potential,
+    deposits: minerals.deposits,
     precipitation: Float64Array.from(hydro.precipitation),
     precipitationSamples: climate.moisture.samples,
     evaporation: climate.moisture.evaporation,
@@ -465,7 +501,11 @@ export function buildHistory(input: PlanetParams, onProgress: Progress = () => {
     const climate = computeClimate(coarseGrid, params, elevation, sim.seaLevel, coarseArea, coarseHydro.oceanDistance, coarseHydro.lake);
     const evaporation = new Float64Array(coarseGrid.n);
     for (let i = 0; i < coarseGrid.n; i++) evaporation[i] = evaporationRate(climate.temperature.annual[i]);
-    sim.setPrecipitation(liftToLevel(coarseGrid, grid, climate.moisture.annual), liftToLevel(coarseGrid, grid, evaporation));
+    sim.setPrecipitation(
+      liftToLevel(coarseGrid, grid, climate.moisture.annual),
+      liftToLevel(coarseGrid, grid, evaporation),
+      liftToLevel(coarseGrid, grid, climate.temperature.annual),
+    );
   };
   sim.run(
     params.tectonicAge,

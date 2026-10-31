@@ -5,6 +5,7 @@ import type { BasinInfo } from './climate/ocean.ts';
 import { DEG } from './grid/geometry.ts';
 import type { Grid } from './grid/grid.ts';
 import type { LakeInfo } from './hydrology/routing.ts';
+import { MINERAL_COUNT } from './resources/minerals.ts';
 
 /** Per-world summary statistics (DESIGN 3.6). */
 
@@ -85,6 +86,8 @@ export interface WorldStats {
   cloudLongwaveForcing: number;
   /** Land fraction per Koppen group: tropical, arid, temperate, continental, polar. */
   koppen: { A: number; B: number; C: number; D: number; E: number };
+  /** Deposits per mineral, in resources/minerals.ts MINERALS order (M21). */
+  depositCounts: number[];
 }
 
 export interface ReliefFields {
@@ -126,7 +129,12 @@ export interface BiomeFields {
   koppen: Uint8Array;
 }
 
-export function computeStats(grid: Grid, relief: ReliefFields, hydro: HydrologyFields, climate: ClimateFields, biome: BiomeFields): WorldStats {
+export interface ResourceFields {
+  /** Bit per mineral. */
+  deposits: Uint8Array;
+}
+
+export function computeStats(grid: Grid, relief: ReliefFields, hydro: HydrologyFields, climate: ClimateFields, biome: BiomeFields, resources: ResourceFields): WorldStats {
   const { elevation, areaKm2, seaLevel, crustType, thickness } = relief;
   const n = elevation.length;
   let total = 0;
@@ -166,6 +174,7 @@ export function computeStats(grid: Grid, relief: ReliefFields, hydro: HydrologyF
   let shortwaveSum = 0;
   let longwaveSum = 0;
   const koppen = { A: 0, B: 0, C: 0, D: 0, E: 0 };
+  const depositCounts = new Array<number>(MINERAL_COUNT).fill(0);
   const hyps = new Array<number>(HYPSOMETRY_BINS).fill(0);
   for (let i = 0; i < n; i++) {
     const e = elevation[i] - seaLevel;
@@ -202,6 +211,8 @@ export function computeStats(grid: Grid, relief: ReliefFields, hydro: HydrologyF
       const group = koppenGroup(biome.koppen[i]) as keyof typeof koppen;
       if (group in koppen) koppen[group] += a;
     }
+    const bits = resources.deposits[i];
+    if (bits) for (let m = 0; m < MINERAL_COUNT; m++) if ((bits >> m) & 1) depositCounts[m]++;
     if (crustType[i] === 1) continental += a;
     if (thickness[i] > maxThickness) maxThickness = thickness[i];
     if (hydro.riverLength[i] > longest) longest = hydro.riverLength[i];
@@ -298,6 +309,7 @@ export function computeStats(grid: Grid, relief: ReliefFields, hydro: HydrologyF
       D: land > 0 ? koppen.D / land : 0,
       E: land > 0 ? koppen.E / land : 0,
     },
+    depositCounts,
   };
 }
 

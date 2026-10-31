@@ -1,6 +1,6 @@
 import { GlobeView } from '../render/globe.ts';
 import { renderModel } from './model.ts';
-import { LAYERS, cellColors, layerById, paintCells } from '../render/layers.ts';
+import { cellColors, layerById, layersOfGroup, paintCells, type LayerGroup } from '../render/layers.ts';
 import { renderLegend } from '../render/legend.ts';
 import { MapView } from '../render/map.ts';
 import { equirectRaster } from '../render/raster.ts';
@@ -9,6 +9,7 @@ import { ANNUAL, SAMPLES } from '../sim/climate/insolation.ts';
 import { Grid } from '../sim/grid/grid.ts';
 import { CURRENT_MILESTONE, EARTH, PARAM_SPECS, PRESETS, type PlanetParams } from '../sim/params.ts';
 import type { World } from '../sim/pipeline.ts';
+import { MINERALS, MINERAL_NAMES } from '../sim/resources/minerals.ts';
 import type { WorldStats } from '../sim/stats.ts';
 import { SimClient } from '../worker/client.ts';
 import { explainCell, sampleName } from './explain.ts';
@@ -18,6 +19,8 @@ import { paramsFromHash, paramsToHash } from './url.ts';
 const GALLERY_SIZE = 6;
 /** Delay after the last parameter edit before the automatic preview starts. */
 const PREVIEW_DEBOUNCE_MS = 500;
+/** localStorage key of the "Beyond geography" toggle. */
+const BEYOND_KEY = 'geografia.beyond';
 /** Timeline keyframes requested per full build; fewer on the largest grids to bound memory. */
 const KEYFRAMES = 8;
 const KEYFRAMES_LARGE_GRID = 4;
@@ -39,7 +42,12 @@ interface GalleryEntry {
 
 function template(): string {
   const presetOptions = PRESETS.map((p) => `<option value="${p.name}">${p.name}</option>`).join('');
-  const layerOptions = LAYERS.map((l) => `<option value="${l.id}">${l.name}</option>`).join('');
+  const layerOptions = layersOfGroup('geography').map((l) => `<option value="${l.id}">${l.name}</option>`).join('');
+  const beyondGroups: [LayerGroup, string][] = [['resources', 'Resources'], ['life', 'Life'], ['civilization', 'Civilization']];
+  const beyondOptions = '<option value="">— the geography layer above —</option>' + beyondGroups
+    .filter(([group]) => layersOfGroup(group).length > 0)
+    .map(([group, label]) => `<optgroup label="${label}">${layersOfGroup(group).map((l) => `<option value="${l.id}">${l.name}</option>`).join('')}</optgroup>`)
+    .join('');
   const paramRows = PARAM_SPECS.map((s) => {
     const inactive = s.wiredIn > CURRENT_MILESTONE;
     const cls = inactive ? 'inactive' : '';
@@ -73,6 +81,8 @@ function template(): string {
         <div id="status" class="status"></div>
         <h2>Layer</h2>
         <select id="layer">${layerOptions}</select>
+        <label class="check"><input type="checkbox" id="beyond" /> Beyond geography: resources, life, civilization</label>
+        <select id="layerBeyond" class="hidden" title="Layers beyond the geography; choosing one here shows it instead of the layer above">${beyondOptions}</select>
         <div id="sampleRow" class="row hidden">
           <label>Month <input type="range" id="sample" min="0" max="${SAMPLES}" step="1" value="${ANNUAL}" /></label>
           <span id="sampleLabel" class="unit">annual</span>
@@ -137,6 +147,8 @@ export function mountApp(root: HTMLElement): void {
   const progress = q<HTMLProgressElement>('#progress');
   const status = q<HTMLDivElement>('#status');
   const layerSelect = q<HTMLSelectElement>('#layer');
+  const beyondCheck = q<HTMLInputElement>('#beyond');
+  const layerBeyond = q<HTMLSelectElement>('#layerBeyond');
   const sampleRow = q<HTMLDivElement>('#sampleRow');
   const sampleInput = q<HTMLInputElement>('#sample');
   const sampleLabel = q<HTMLSpanElement>('#sampleLabel');
@@ -186,6 +198,8 @@ export function mountApp(root: HTMLElement): void {
   let queued: 'preview' | 'full' | null = null;
   let selectedCell = -1;
   let sample = ANNUAL;
+  /** The "Beyond geography" toggle (M21): off, the app shows geography only. Remembered per browser and in the link. */
+  let beyond = localStorage.getItem(BEYOND_KEY) === '1' || new URLSearchParams(location.hash.slice(1)).get('beyond') === '1';
   let previewTimer: ReturnType<typeof setTimeout> | null = null;
   let playTimer: ReturnType<typeof setInterval> | null = null;
   /** The history slider stays on the final world while keyframes arrive, until the user moves it. */
@@ -202,6 +216,16 @@ export function mountApp(root: HTMLElement): void {
   };
 
   const pct = (v: number, digits = 1): string => `${(v * 100).toFixed(digits)} %`;
+  /** The parameters as a link, with the toggle when it is on. */
+  const linkHash = (p: PlanetParams): string => paramsToHash(p) + (beyond ? '&beyond=1' : '');
+  /** The layer on screen: the one beyond geography when chosen, else the geography one. */
+  const activeLayerId = (): string => (beyond && layerBeyond.value ? layerBeyond.value : layerSelect.value);
+  /** Rows shown only beyond geography. */
+  const beyondRows = (w: World): [string, string][] => [
+    ['Deposits', w.reference && w.stats.depositCounts.every((c) => c === 0)
+      ? 'not available for the measured relief (no tectonic history, no shipped data)'
+      : MINERALS.map((m, k) => `${MINERAL_NAMES[m]} ${w.stats.depositCounts[k]}`).join(', ')],
+  ];
   const statRows = (w: World): [string, string][] => {
     const s: WorldStats = w.stats;
     const k = s.koppen;
@@ -244,8 +268,9 @@ export function mountApp(root: HTMLElement): void {
 
   const renderStats = (): void => {
     if (!world) return;
-    const a = statRows(world);
-    const b = view === 'compare' && compareWorld ? statRows(compareWorld) : null;
+    const rows = (w: World): [string, string][] => (beyond ? statRows(w).concat(beyondRows(w)) : statRows(w));
+    const a = rows(world);
+    const b = view === 'compare' && compareWorld ? rows(compareWorld) : null;
     const head = b ? `<tr><th></th><th>A</th><th>B</th></tr>` : '';
     statsTable.innerHTML = head + a
       .map(([key, value], i) => `<tr><td>${key}</td><td>${value}</td>${b ? `<td>${b[i][1]}</td>` : ''}</tr>`)
@@ -256,7 +281,7 @@ export function mountApp(root: HTMLElement): void {
   const renderInspector = (cell: number, w: World = world as World, pane = ''): void => {
     if (!w) return;
     selectedCell = cell;
-    const sections = explainCell(w, cell, sample);
+    const sections = explainCell(w, cell, sample).filter((s) => !s.group || beyond);
     if (pane) sections[0].title = `${pane}: ${sections[0].title}`;
     inspector.innerHTML = sections
       .map((section) => `<div class="section"><div class="section-title">${section.title}</div>${section.lines.map((l) => `<div>${l}</div>`).join('')}</div>`)
@@ -437,7 +462,7 @@ export function mountApp(root: HTMLElement): void {
     item.addEventListener('click', () => {
       stopPlaying();
       setParams(w.params);
-      location.hash = paramsToHash(w.params);
+      location.hash = linkHash(w.params);
       current = entry;
       timeline.value = String(entry.keyframes.length);
       showWorld(w);
@@ -472,7 +497,7 @@ export function mountApp(root: HTMLElement): void {
     status.textContent = mode === 'preview' ? 'preview' : 'starting';
     try {
       const params = readParams();
-      if (mode === 'full') location.hash = paramsToHash(params);
+      if (mode === 'full') location.hash = linkHash(params);
       let entry: GalleryEntry | null = null;
       const result = await client.build(params, {
         onProgress: (stage, fraction) => {
@@ -527,6 +552,9 @@ export function mountApp(root: HTMLElement): void {
 
   let earthBytes: ArrayBuffer | null = null;
   let earthHistoryBytes: ArrayBuffer | null = null;
+  /** Measured deposits (M21), shipped only when someone converted the USGS data; absent is normal. */
+  let earthMineralBytes: ArrayBuffer | null = null;
+  let earthMineralsChecked = false;
   /** The real Earth: fetch the shipped relief and its past once, build them in the worker, add the result to the gallery. */
   const runEarth = async (): Promise<void> => {
     if (building) return;
@@ -547,6 +575,11 @@ export function mountApp(root: HTMLElement): void {
         status.textContent = 'loading the real past (PALEOMAP reconstructions)';
         const response = await fetch(`${import.meta.env.BASE_URL}data/earth-history-1deg.i16`);
         if (response.ok) earthHistoryBytes = await response.arrayBuffer();
+      }
+      if (!earthMineralsChecked) {
+        earthMineralsChecked = true;
+        const response = await fetch(`${import.meta.env.BASE_URL}data/earth-minerals-1deg.u8`);
+        if (response.ok && response.headers.get('content-type')?.includes('octet-stream')) earthMineralBytes = await response.arrayBuffer();
       }
       let entry: GalleryEntry | null = null;
       const result = await client.buildEarth(earthBytes.slice(0), {
@@ -570,7 +603,7 @@ export function mountApp(root: HTMLElement): void {
             status.textContent = `the real past ready in ${(elapsedMs / 1000).toFixed(1)} s; drag the slider from 200 million years ago to today`;
           }
         },
-      }, earthHistoryBytes ? earthHistoryBytes.slice(0) : undefined);
+      }, earthHistoryBytes ? earthHistoryBytes.slice(0) : undefined, earthMineralBytes ? earthMineralBytes.slice(0) : undefined);
       entry = addToGallery(result.world);
       current = entry;
       followLatest = true;
@@ -609,7 +642,7 @@ export function mountApp(root: HTMLElement): void {
   const exportHistoryStrip = (): void => {
     if (!current) return;
     const frames = [...current.keyframes, current.world];
-    const layer = layerById(layerSelect.value);
+    const layer = layerById(activeLayerId());
     const columns = Math.min(STRIP_COLUMNS, frames.length);
     const rows = Math.ceil(frames.length / columns);
     const captionH = 22;
@@ -637,7 +670,7 @@ export function mountApp(root: HTMLElement): void {
   };
 
   const applyLayer = (): void => {
-    const id = layerSelect.value;
+    const id = activeLayerId();
     map.setLayer(id);
     globe.setLayer(id);
     mapA.setLayer(id);
@@ -661,7 +694,24 @@ export function mountApp(root: HTMLElement): void {
     if (seedInput) seedInput.value = String(crypto.getRandomValues(new Uint32Array(1))[0]);
     void runBuild('full');
   });
-  layerSelect.addEventListener('change', applyLayer);
+  layerSelect.addEventListener('change', () => {
+    // A geography pick takes the screen back from the layer beyond.
+    layerBeyond.value = '';
+    applyLayer();
+  });
+  layerBeyond.addEventListener('change', applyLayer);
+  const setBeyond = (on: boolean): void => {
+    beyond = on;
+    beyondCheck.checked = on;
+    layerBeyond.classList.toggle('hidden', !on);
+    localStorage.setItem(BEYOND_KEY, on ? '1' : '0');
+    if (!on) layerBeyond.value = '';
+    applyLayer();
+    renderStats();
+    if (selectedCell >= 0 && world) renderInspector(selectedCell);
+    if (location.hash) location.hash = linkHash(readParams());
+  };
+  beyondCheck.addEventListener('change', () => setBeyond(beyondCheck.checked));
   sampleInput.addEventListener('input', () => {
     sample = Number(sampleInput.value);
     sampleLabel.textContent = sampleName(sample);
@@ -684,7 +734,7 @@ export function mountApp(root: HTMLElement): void {
     if (!world) return;
     const w = world;
     const source = view === 'globe' ? globe : view === 'compare' ? mapA : map;
-    void source.toPng().then((blob) => download(blob, `geografia-${w.params.seed}-step${w.steps}-${layerSelect.value}-${view}.png`));
+    void source.toPng().then((blob) => download(blob, `geografia-${w.params.seed}-step${w.steps}-${activeLayerId()}-${view}.png`));
   });
   exportJsonButton.addEventListener('click', () => {
     if (!world) return;
@@ -695,7 +745,7 @@ export function mountApp(root: HTMLElement): void {
     download(new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' }), `geografia-${world.params.seed}-step${world.steps}.json`);
   });
   copyLinkButton.addEventListener('click', () => {
-    location.hash = paramsToHash(readParams());
+    location.hash = linkHash(readParams());
     void navigator.clipboard?.writeText(location.href).then(
       () => { status.textContent = 'link copied'; },
       () => { status.textContent = 'link is in the address bar'; },
@@ -711,7 +761,7 @@ export function mountApp(root: HTMLElement): void {
     if (compareWorld) renderInspector(cell, compareWorld, 'B');
   });
 
-  applyLayer();
+  setBeyond(beyond);
   const initial = paramsFromHash(location.hash);
   setParams(initial ?? EARTH);
   if (initial) {

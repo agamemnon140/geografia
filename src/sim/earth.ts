@@ -130,6 +130,9 @@ export function earthReliefState(grid: Grid, elevation: EarthElevation): ReliefS
     eroded: new Float64Array(n),
     orogenyStep: new Int32Array(n).fill(-1),
     boundary: new Uint8Array(n),
+    coal: new Float64Array(n),
+    oil: new Float64Array(n),
+    salt: new Float64Array(n),
     plates: [{ axis: [0, 0, 1], rate: 0 }],
     hotspots: [],
     events: [],
@@ -152,13 +155,49 @@ export function earthContext(): BuildContext {
   };
 }
 
-/** Hydrology, climate, ice and biomes of the real Earth from the shipped relief, at the Earth grid level. */
-export function buildEarth(elevation: EarthElevation, onProgress: Progress = () => {}, context: BuildContext = earthContext()): World {
+/**
+ * Measured mineral deposits for the real Earth (M21): a one-degree mask
+ * written by `scripts/convert-mrds.ts` from the USGS Mineral Resources Data
+ * System (public domain), 180 rows x 360 columns of bytes, row 0 at 89.5 N,
+ * column 0 at 179.5 W, bit m set for mineral m of resources/minerals.ts.
+ * Shipped only once someone has downloaded the source by hand (the USGS
+ * server refuses automated clients); without the file the real Earth shows
+ * no deposits and says so.
+ */
+export const EARTH_MINERALS_PATH = 'data/earth-minerals-1deg.u8';
+export const EARTH_MINERALS_ROWS = 180;
+export const EARTH_MINERALS_COLS = 360;
+
+/** Per-cell deposit bits from the one-degree mask: every degree cell's bits go to the grid cell holding its center. */
+export function earthDeposits(grid: Grid, buffer: ArrayBuffer): Uint8Array {
+  const expected = EARTH_MINERALS_ROWS * EARTH_MINERALS_COLS;
+  if (buffer.byteLength !== expected) throw new Error(`Earth minerals file has ${buffer.byteLength} bytes, expected ${expected}`);
+  const mask = new Uint8Array(buffer);
+  const out = new Uint8Array(grid.n);
+  let prev = 0;
+  for (let r = 0; r < EARTH_MINERALS_ROWS; r++) {
+    const lat = 90 - (r + 0.5);
+    for (let c = 0; c < EARTH_MINERALS_COLS; c++) {
+      const bits = mask[r * EARTH_MINERALS_COLS + c];
+      if (!bits) continue;
+      const lon = -180 + (c + 0.5);
+      const [x, y, z] = fromLatLon(lat * DEG, lon * DEG);
+      const cell = nearestCell(grid, x, y, z, prev);
+      prev = cell;
+      out[cell] |= bits;
+    }
+  }
+  return out;
+}
+
+/** Hydrology, climate, ice and biomes of the real Earth from the shipped relief, at the Earth grid level; `deposits` are the measured ones when shipped. */
+export function buildEarth(elevation: EarthElevation, onProgress: Progress = () => {}, context: BuildContext = earthContext(), deposits?: Uint8Array): World {
   onProgress('grid', 0);
   onProgress('relief', 0.05);
   const state = earthReliefState(context.grid, elevation);
   state.step = EARTH.tectonicAge;
-  const world = finalize(context, state, onProgress);
+  // The measured deposits belong to the present only: the reconstructions of the past get none.
+  const world = finalize({ ...context, measuredDeposits: deposits ?? new Uint8Array(context.grid.n) }, state, onProgress);
   world.reference = 'ETOPO5';
   onProgress('done', 1);
   return world;

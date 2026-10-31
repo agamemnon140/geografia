@@ -1,6 +1,7 @@
 import { ANNUAL, SAMPLES } from '../sim/climate/insolation.ts';
 import { KOPPEN_NAMES } from '../sim/climate/koppen.ts';
 import type { World } from '../sim/pipeline.ts';
+import { MINERALS, MINERAL_COUNT, MINERAL_NAMES } from '../sim/resources/minerals.ts';
 import {
   BOUNDARY_CONVERGENT,
   BOUNDARY_DIVERGENT,
@@ -25,9 +26,20 @@ export type Legend =
  * `rivers` for the drainage network drawn as lines. Seasonal layers take a
  * sample index (0 to 11) or ANNUAL.
  */
+/** Where a layer belongs in the UI: geography is always on, the rest behind the "Beyond geography" toggle (M21). */
+export type LayerGroup = 'geography' | 'resources' | 'life' | 'civilization';
+
+/** A point symbol drawn over the paint (a deposit, a site). */
+export interface Mark {
+  cell: number;
+  color: RGB;
+}
+
 export interface Layer {
   id: string;
   name: string;
+  /** Default geography. */
+  group?: LayerGroup;
   /** True when the layer changes with the sample (month) selector. */
   seasonal?: boolean;
   legend?: Legend;
@@ -35,6 +47,13 @@ export interface Layer {
   rivers?: boolean;
   cellColor(world: World, cell: number, sample: number): RGB;
   smooth?(world: World, px: PixelSampler, sample: number): RGB;
+  /** Point symbols drawn after the paint and the rivers. */
+  marks?(world: World): Mark[];
+}
+
+/** Layers of a group, for the UI's dropdowns. */
+export function layersOfGroup(group: LayerGroup): Layer[] {
+  return LAYERS.filter((l) => (l.group ?? 'geography') === group);
 }
 
 /** Pixels whose raster entry is -1 (outside the globe) get this. */
@@ -213,6 +232,17 @@ const CLOUD_RAMP: Stop[] = [
   [0, [40, 110, 200]],
   [50, [150, 160, 175]],
   [100, [245, 245, 248]],
+];
+
+/** Mineral colors in MINERALS order: rust, copper, gold, lime, black, violet, white. */
+export const MINERAL_COLORS: RGB[] = [
+  [175, 55, 35],
+  [220, 125, 45],
+  [245, 200, 40],
+  [150, 215, 60],
+  [25, 25, 28],
+  [130, 70, 170],
+  [245, 240, 245],
 ];
 
 const LAKE_COLOR: RGB = [40, 120, 210];
@@ -489,7 +519,76 @@ export const LAYERS: Layer[] = [
     name: 'Grid cells (debug)',
     cellColor: (_world, i) => cellDebugColor(i),
   },
+  // Resources (M21): every deposit over a muted relief, then one layer per mineral with its potential.
+  {
+    id: 'minerals',
+    name: 'Mineral deposits (all)',
+    group: 'resources',
+    legend: {
+      kind: 'categories',
+      items: MINERALS.map((m, k) => ({ color: MINERAL_COLORS[k], label: MINERAL_NAMES[m] })).concat([
+        { color: LAND_WASH, label: 'deposits are drawn from the potential: dense where it is high, sparse where it is low; the real Earth shows measured deposits where data is shipped' },
+      ]),
+    },
+    relief: 'light',
+    cellColor: (world, i) => mutedLand(world.elevation[i] - world.seaLevel),
+    smooth: (world, px) => mutedLand(relief(world, px)),
+    marks: (world) => allDepositMarks(world),
+  },
+  ...MINERALS.map((m, k): Layer => ({
+    id: `mineral-${m}`,
+    name: `${MINERAL_NAMES[m][0].toUpperCase()}${MINERAL_NAMES[m].slice(1)} potential`,
+    group: 'resources',
+    legend: { kind: 'ramp', stops: mineralRamp(k), unit: `potential 0 to 1; dots are ${MINERAL_NAMES[m]} deposits` },
+    relief: 'light',
+    cellColor: (world, i) => {
+      const rel = world.elevation[i] - world.seaLevel;
+      if (rel < 0 && m !== 'oil') return mutedLand(rel);
+      return mix(mutedLand(rel), MINERAL_COLORS[k], 0.85 * world.mineralPotential[k * world.n + i]);
+    },
+    smooth: (world, px) => {
+      const rel = relief(world, px);
+      if (rel < 0 && m !== 'oil') return mutedLand(rel);
+      const base = k * world.n;
+      return mix(mutedLand(rel), MINERAL_COLORS[k], 0.85 * px.interp(world.mineralPotential.subarray(base, base + world.n)));
+    },
+    marks: (world) => depositMarks(world, k),
+  })),
 ];
+
+/** The land washed pale and the sea dim, so marks and potentials carry the color. */
+function mutedLand(rel: number): RGB {
+  return rel >= 0 ? mix(hypsometric(rel), LAND_WASH, 0.55) : koppenSea(rel);
+}
+
+function mineralRamp(k: number): Stop[] {
+  return [
+    [0, mix(hypsometric(300), LAND_WASH, 0.55)],
+    [1, mix(mix(hypsometric(300), LAND_WASH, 0.55), MINERAL_COLORS[k], 0.85)],
+  ];
+}
+
+function depositMarks(world: World, k: number): Mark[] {
+  const out: Mark[] = [];
+  for (let i = 0; i < world.n; i++) if ((world.deposits[i] >> k) & 1) out.push({ cell: i, color: MINERAL_COLORS[k] });
+  return out;
+}
+
+function allDepositMarks(world: World): Mark[] {
+  const out: Mark[] = [];
+  for (let i = 0; i < world.n; i++) {
+    const bits = world.deposits[i];
+    if (!bits) continue;
+    // One mark per cell: the first mineral set, so the symbols do not pile up.
+    for (let k = 0; k < MINERAL_COUNT; k++) {
+      if ((bits >> k) & 1) {
+        out.push({ cell: i, color: MINERAL_COLORS[k] });
+        break;
+      }
+    }
+  }
+  return out;
+}
 
 export function layerById(id: string): Layer {
   return LAYERS.find((l) => l.id === id) ?? LAYERS[0];
