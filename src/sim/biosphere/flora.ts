@@ -1,5 +1,6 @@
 import { SAMPLES } from '../climate/insolation.ts';
 import type { Grid } from '../grid/grid.ts';
+import { EARTH_O2 } from '../params.ts';
 import type { ReliefState } from '../pipeline.ts';
 
 /**
@@ -14,6 +15,11 @@ import type { ReliefState } from '../pipeline.ts';
  * richer than Koppen's letters: forests by their winter and their rain,
  * grasslands and scrub by their dryness, wetlands by the rivers. There is
  * no succession: the cover is the one the current climate supports.
+ * The planet's composition (M26) enters as three pure factors that are
+ * exactly 1 on Earth: photorespiration lowers growth as the oxygen rises,
+ * CO2 (the greenhouse parameter) fertilizes it, and a fire regime that
+ * rises steeply with oxygen moves the forest thresholds of the seasonal
+ * climates, so savannas spread on an oxygen-rich planet.
  */
 
 /** Vegetation classes; index 0 is the ocean (lakes keep their water color on the map). */
@@ -48,6 +54,30 @@ export const SUNSHINE_REFERENCE_H = 2500;
 export const SUNSHINE_WEIGHT = 0.2;
 /** Soil factor: productivity scales from 0.6 on barren soil to 1.4 on the richest. */
 export const SOIL_WEIGHT = 0.8;
+/** Composition (M26): photorespiration lowers C3 growth by this share per unit of relative oxygen change (the Warburg effect), clamped. */
+export const PHOTORESPIRATION_SLOPE = 0.35;
+export const OXYGEN_GROWTH_MIN = 0.5;
+export const OXYGEN_GROWTH_MAX = 1.5;
+/** CO2 fertilization: growth rises with the logarithm of the greenhouse parameter (FACE experiments: about +28 % per doubling), floored. */
+export const CO2_BETA = 0.4;
+export const CO2_GROWTH_MIN = 0.5;
+/** Fire regime: fire frequency rises steeply with oxygen (Belcher 2010); the forest thresholds of the seasonal climates scale by this factor, clamped. */
+export const FIRE_EXPONENT = 1.5;
+export const FIRE_MIN = 0.3;
+export const FIRE_MAX = 3;
+
+/** Growth factor of the oxygen fraction: 1 on Earth, 0.85 at 30 %, 1.15 at 12 %. */
+export function oxygenGrowthFactor(oxygen: number): number {
+  return Math.min(OXYGEN_GROWTH_MAX, Math.max(OXYGEN_GROWTH_MIN, 1 - PHOTORESPIRATION_SLOPE * ((oxygen - EARTH_O2) / EARTH_O2)));
+}
+/** Growth factor of the greenhouse (CO2) parameter: 1 on Earth, 1.28 at twice the CO2. */
+export function carbonGrowthFactor(greenhouse: number): number {
+  return Math.max(CO2_GROWTH_MIN, 1 + CO2_BETA * Math.log(greenhouse));
+}
+/** Fire factor of the oxygen fraction: 1 on Earth, 1.71 at 30 %, 0.6 at 15 %. */
+export function fireFactor(oxygen: number): number {
+  return Math.min(FIRE_MAX, Math.max(FIRE_MIN, Math.pow(oxygen / EARTH_O2, FIRE_EXPONENT)));
+}
 
 /** Soil fertility terms (0 to 1 after the sum): a base, enrichment by ash and alluvium, losses. */
 export const SOIL_BASE = 0.45;
@@ -111,6 +141,9 @@ export interface FloraInputs {
   lake: Int32Array;
   /** False for a measured relief without provenance (the real Earth): the shield term, which reads the crust's history, is skipped. */
   history: boolean;
+  /** Composition (M26): the atmospheric oxygen fraction and the greenhouse (CO2) parameter. */
+  oxygen: number;
+  greenhouse: number;
 }
 
 function clamp01(v: number): number {
@@ -133,6 +166,9 @@ export function computeFlora(grid: Grid, state: ReliefState, seaLevel: number, i
   const soilLoss = new Float64Array(n);
   const vegetation = new Uint8Array(n);
   const water = (j: number): boolean => state.elevation[j] < seaLevel || input.lake[j] >= 0;
+  const oxygenFactor = oxygenGrowthFactor(input.oxygen);
+  const carbonFactor = carbonGrowthFactor(input.greenhouse);
+  const fire = fireFactor(input.oxygen);
 
   for (let i = 0; i < n; i++) {
     if (water(i)) continue;
@@ -161,7 +197,7 @@ export function computeFlora(grid: Grid, state: ReliefState, seaLevel: number, i
     // Productivity.
     const sun = 1 + SUNSHINE_WEIGHT * Math.max(-1, Math.min(1, (input.sunshineHours[i] - SUNSHINE_REFERENCE_H) / SUNSHINE_REFERENCE_H));
     const soilFactor = 1 - SOIL_WEIGHT / 2 + SOIL_WEIGHT * fertility;
-    npp[i] = miamiNpp(t, p) * sun * soilFactor;
+    npp[i] = miamiNpp(t, p) * sun * soilFactor * oxygenFactor * carbonFactor;
 
     // Vegetation from the monthly climate.
     let warmest = -Infinity;
@@ -202,9 +238,9 @@ export function computeFlora(grid: Grid, state: ReliefState, seaLevel: number, i
       if (p < SCRUB_MM) v = t > WARM_ANNUAL_C ? VEG_SCRUB : VEG_STEPPE;
       else if (summer < 0.5 * winter && t > WARM_ANNUAL_C) v = VEG_MEDITERRANEAN;
       else if (p > TEMPERATE_RAIN_MM) v = VEG_TEMPERATE_RAIN;
-      else v = npp[i] > FOREST_NPP ? VEG_TEMPERATE : VEG_STEPPE;
+      else v = npp[i] > FOREST_NPP * fire ? VEG_TEMPERATE : VEG_STEPPE;
     } else if (p < TROPICAL_SCRUB_MM) v = VEG_SCRUB;
-    else if (driest < DRY_SEASON_MM) v = p < TROPICAL_FOREST_MM ? VEG_SAVANNA : VEG_SEASONAL;
+    else if (driest < DRY_SEASON_MM) v = p < TROPICAL_FOREST_MM * fire ? VEG_SAVANNA : VEG_SEASONAL;
     else v = p > RAINFOREST_MM ? VEG_RAINFOREST : VEG_SEASONAL;
     if ((flood || lakeside) && t > 0 && p > SCRUB_MM && v !== VEG_TUNDRA) v = VEG_WETLAND;
     vegetation[i] = v;

@@ -1,4 +1,5 @@
 import type { Grid } from '../grid/grid.ts';
+import { EARTH_O2 } from '../params.ts';
 import type { ReliefState } from '../pipeline.ts';
 import { LINEAGE_COUNT } from '../tectonics/crust.ts';
 
@@ -33,6 +34,14 @@ export const RICHNESS_AREA_MAX_KM2 = 1e7;
 export const HISTORYLESS_REALMS = LINEAGE_COUNT;
 export const MEGAFAUNA_HERBIVORES = 1;
 export const MEGAFAUNA_PREDATORS = 2;
+/** Composition (M26): large active animals need oxygen. None below HYPOXIA_O2, full aerobic scope at Earth's fraction (the productivity a large herbivore needs rises as the scope falls); giant arthropods, the Carboniferous dragonflies, above GIANT_ARTHROPOD_O2. */
+export const MEGAFAUNA_GIANT_ARTHROPODS = 4;
+export const HYPOXIA_O2 = 0.1;
+export const GIANT_ARTHROPOD_O2 = 0.27;
+/** Aerobic scope of the oxygen fraction: exactly 1 on Earth, 0 at 10 %. */
+export function aerobicScope(oxygen: number): number {
+  return clamp01((oxygen - HYPOXIA_O2) / (EARTH_O2 - HYPOXIA_O2));
+}
 
 export interface FaunaFields {
   /** Lineage shares per cell, cell-major (cell * LINEAGE_COUNT + k), summing to 1 on land, 0 on water. */
@@ -159,6 +168,7 @@ export function computeFauna(
   npp: Float64Array,
   iceSheet: Uint8Array,
   history: boolean,
+  oxygen: number = EARTH_O2,
 ): FaunaFields {
   const n = grid.n;
   const L = LINEAGE_COUNT;
@@ -196,6 +206,8 @@ export function computeFauna(
   const richness = new Float64Array(n);
   const megafauna = new Uint8Array(n);
   const logSpan = Math.log10(RICHNESS_AREA_MAX_KM2 / RICHNESS_AREA_MIN_KM2);
+  const aerobic = aerobicScope(oxygen);
+  const herbivoreNpp = aerobic > 0 ? HERBIVORE_NPP / aerobic : Infinity;
   for (let i = 0; i < n; i++) {
     const id = landmass[i];
     if (id < 0) continue;
@@ -216,9 +228,10 @@ export function computeFauna(
     const energy = Math.sqrt(clamp01(npp[i] / RICHNESS_NPP));
     const size = clamp01(Math.log10(Math.max(RICHNESS_AREA_MIN_KM2, area) / RICHNESS_AREA_MIN_KM2) / logSpan);
     richness[i] = iceSheet[i] ? 0 : energy * size;
-    if (!iceSheet[i] && npp[i] >= HERBIVORE_NPP && area >= HERBIVORE_LANDMASS_KM2) {
+    if (!iceSheet[i] && npp[i] >= herbivoreNpp && area >= HERBIVORE_LANDMASS_KM2) {
       megafauna[i] = MEGAFAUNA_HERBIVORES | (area >= PREDATOR_LANDMASS_KM2 ? MEGAFAUNA_PREDATORS : 0);
     }
+    if (!iceSheet[i] && oxygen >= GIANT_ARTHROPOD_O2 && npp[i] >= HERBIVORE_NPP) megafauna[i] |= MEGAFAUNA_GIANT_ARTHROPODS;
   }
   return { lineage, realm, endemism, richness, megafauna, landmass, landmassAreas: areas };
 }

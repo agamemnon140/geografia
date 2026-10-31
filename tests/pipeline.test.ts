@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { cellAreasKm2, Grid } from '../src/sim/grid/grid.ts';
 import { oceanFraction } from '../src/sim/hypsometry.ts';
-import { EARTH, PRESETS, validateParams } from '../src/sim/params.ts';
+import { EARTH, PARAM_SPECS, PRESETS, validateParams } from '../src/sim/params.ts';
 import { build, worldBuffers } from '../src/sim/pipeline.ts';
 
 function sameBytes(a: ArrayBufferView, b: ArrayBufferView): boolean {
@@ -98,7 +98,10 @@ describe('build', () => {
   it('builds every preset without NaN', { timeout: 120000 }, () => {
     // One level coarser: the NaN check does not need the full grid, and the full one timed out on CI
     // once the climate ran twice (M20) and the biosphere and civilization followed (M22 to M24).
-    for (const preset of PRESETS) {
+    // Presets that only change the composition (M26) cannot put NaN in the relief; tests/composition.test.ts covers them.
+    const geography = PRESETS.filter((p) => PARAM_SPECS.some((s) => s.wiredIn <= 9 && p.params[s.key] !== EARTH[s.key]) || p.name === 'Earth');
+    expect(geography.length).toBeGreaterThan(10);
+    for (const preset of geography) {
       const w = build({ ...preset.params, radiusKm: Math.min(preset.params.radiusKm, 6371), tectonicAge: 50 }, () => {}, { coarser: 1 });
       for (let i = 0; i < w.n; i++) {
         expect(Number.isNaN(w.elevation[i])).toBe(false);

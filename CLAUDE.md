@@ -113,6 +113,15 @@ every push to `main` of https://github.com/agamemnon140/geografia). Local:
   keyframes every 25 million years (`keyframeStepsEvery`,
   `BuildOptions.keyframeInterval`), the interval widening to keep at most
   eight (every 50 at 400); every label in the app speaks in million years.
+- M26: composition: parameters `oxygen` (fraction, Earth 0.21), `crustIron`
+  and `crustMetals` (x Earth), and `greenhouse` read as the CO2 knob; pure
+  factors exactly 1 on Earth (`oxygenGrowthFactor`, `carbonGrowthFactor`,
+  `fireFactor` in `flora.ts`; `aerobicScope` and `MEGAFAUNA_GIANT_ARTHROPODS`
+  in `fauna.ts`; `oilPreservation` and the `Composition` multipliers in
+  `minerals.ts`; `hypoxiaShiftM`, `airTerm` and the fourth habitability term
+  `air` in `civilization.ts`, `HABITABILITY_TERMS`, stride 4); the climate is
+  untouched; presets Oxygen-rich, Low oxygen, Iron world;
+  `scripts/diag-composition.ts [seed] [coarser]`; `tests/composition.test.ts`.
 
 ## Where things are
 
@@ -136,9 +145,9 @@ every push to `main` of https://github.com/agamemnon140/geografia). Local:
   `src/worker/` (protocol, worker, client).
 - `scripts/`: `render-png.ts out.png [preset|Real] [seed] [layer] [width]`,
   `render-globe.ts`, `diag-tectonics.ts`, `diag-climate.ts [Real]`,
-  `diag-resources.ts [preset] [seed]`, `convert-etopo5.ts`,
+  `diag-resources.ts [preset] [seed]`, `diag-composition.ts [seed] [coarser]`, `convert-etopo5.ts`,
   `convert-paleodem.ts`, `convert-mrds.ts <mrds.csv>`, `make-icons.ts`.
-- `tests/`: 24 files, 134 tests; CI budget for the full build is 60 s.
+- `tests/`: 25 files, 142 tests; CI budget for the full build is 60 s.
   `tests/minerals.test.ts` pins seed 2's ocean fraction, mean land
   elevation, mean temperature and sea level to the M20 values: anything
   that changes the geography fails it on purpose.
@@ -214,9 +223,7 @@ spikes after collisions; past greenhouse not applied to the Earth timeline.
 - Climate biases above (boreal cold, cool deserts, sea ice).
 - Asked by the owner on 2026-10-31, for after M24: (1) choosing the
   planet's age since its Pangea before building, 0 to 400 million years
-  (done in M25); (2) composition
-  parameters that reach minerals, flora and fauna (atmospheric oxygen,
-  crustal iron and other abundances, with causal paths like the other
-  parameters); (3) an optional fantasy layer, off by default, estimating
+  (done in M25); (2) composition parameters that reach minerals, flora and
+  fauna (done in M26); (3) an optional fantasy layer, off by default, estimating
   where typical fantasy peoples (dwarves, elves) and monsters would live
   from the same geography, flora and fauna, as an explicit sandbox rule set.

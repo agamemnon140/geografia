@@ -167,7 +167,7 @@ export interface World {
   megafauna: Uint8Array;
   landmass: Int32Array;
   landmassAreas: number[];
-  /** Civilization (M24, civilization/civilization.ts): habitability with its three terms (cell-major), agricultural potential, the city-site score with its eight terms (cell-major, CITY_TERMS order), the candidate cities ranked best first, the arrival of people in thousands of years (UNREACHED where none), the origin cell. */
+  /** Civilization (M24, civilization/civilization.ts): habitability with its four terms (cell-major, HABITABILITY_TERMS order: food, water, comfort, air), agricultural potential, the city-site score with its eight terms (cell-major, CITY_TERMS order), the candidate cities ranked best first, the arrival of people in thousands of years (UNREACHED where none), the origin cell. */
   habitability: FloatArray;
   habitabilityTerms: FloatArray;
   agriculture: FloatArray;
@@ -358,18 +358,21 @@ export function finalize(ctx: BuildContext, state: ReliefState, onProgress: Prog
     downstream: hydro.downstream,
     lake: hydro.lake,
     history: !ctx.noHistory,
+    oxygen: params.oxygen,
+    greenhouse: params.greenhouse,
   });
 
   // Fauna (M23) from the lineages the loop carried, on the flora's productivity.
-  const fauna = computeFauna(grid, state, seaLevel, areaKm2, flora.npp, climate.ice.iceSheet, !ctx.noHistory);
+  const fauna = computeFauna(grid, state, seaLevel, areaKm2, flora.npp, climate.ice.iceSheet, !ctx.noHistory, params.oxygen);
 
   // Resources from the provenance (M21); measured ones, or none, for a world without a history.
   const minerals = ctx.noHistory
     ? { potential: new Float64Array(MINERAL_COUNT * n), deposits: ctx.measuredDeposits ?? new Uint8Array(n) }
-    : computeMinerals(grid, state, seaLevel, params.seed, params.radiusKm);
+    : computeMinerals(grid, state, seaLevel, params.seed, params.radiusKm, { crustIron: params.crustIron, crustMetals: params.crustMetals, oxygen: params.oxygen });
 
   // Civilization (M24) on everything above: the flora, the fauna's landmasses, the deposits.
   const civilization = computeCivilization(grid, state, seaLevel, {
+    params,
     areaKm2,
     radiusKm: params.radiusKm,
     temperatureAnnual: climate.temperature.annual,

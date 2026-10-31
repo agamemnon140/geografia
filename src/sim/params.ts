@@ -32,6 +32,12 @@ export interface PlanetParams {
   pressureBar: number;
   /** Orbital eccentricity: unequal seasons between the hemispheres. */
   eccentricity: number;
+  /** Atmospheric oxygen, volume fraction (Earth 0.21): fire regime, plant growth, animal body size, oil preservation, the hypoxia ceiling (M26). */
+  oxygen: number;
+  /** Iron abundance of the crust relative to Earth: iron potential and deposit density. */
+  crustIron: number;
+  /** Copper, gold and tin, and uranium abundance of the crust relative to Earth. */
+  crustMetals: number;
 }
 
 export interface ParamSpec {
@@ -48,7 +54,7 @@ export interface ParamSpec {
 }
 
 /** Milestone currently implemented; parameters wired in later milestones are shown disabled. */
-export const CURRENT_MILESTONE = 9;
+export const CURRENT_MILESTONE = 26;
 
 export const PARAM_SPECS: ParamSpec[] = [
   { key: 'seed', label: 'Seed', min: 0, max: 4294967295, step: 1, unit: '', wiredIn: 1, help: 'All randomness' },
@@ -63,10 +69,16 @@ export const PARAM_SPECS: ParamSpec[] = [
   { key: 'tectonicAge', label: 'Age since Pangea', min: 0, max: 400, step: 10, unit: 'million years', wiredIn: 2, help: 'Time the plates have moved since the supercontinent began to rift (one step per million years): more rifts, orogenies and erosion; 0 shows the supercontinent itself; the timeline keeps a frame every 25 million years' },
   { key: 'glacialPhase', label: 'Glacial phase', min: 0, max: 1, step: 0.05, unit: '', wiredIn: 6, help: 'Temperature offset, sea-level drop, ice extent' },
   { key: 'mantleHeat', label: 'Mantle heat', min: 0.3, max: 3, step: 0.1, unit: 'x Earth', wiredIn: 8, help: 'Plate speed, hotspot volcanism, rifting rate' },
-  { key: 'greenhouse', label: 'Greenhouse', min: 0.2, max: 5, step: 0.1, unit: 'x Earth', wiredIn: 9, help: 'Longwave trapping: global temperature, ice extent' },
+  { key: 'greenhouse', label: 'Greenhouse', min: 0.2, max: 5, step: 0.1, unit: 'x Earth', wiredIn: 9, help: 'Longwave trapping: global temperature, ice extent; as the CO2 knob it also fertilizes plant growth (+28 % per doubling)' },
   { key: 'pressureBar', label: 'Air pressure', min: 0.1, max: 10, step: 0.1, unit: 'bar', wiredIn: 9, help: 'Heat transport to the poles, pressure broadening, seasonal inertia' },
   { key: 'eccentricity', label: 'Eccentricity', min: 0, max: 0.3, step: 0.01, unit: '', wiredIn: 9, help: 'Unequal seasons between hemispheres (perihelion in southern summer)' },
+  { key: 'oxygen', label: 'Oxygen', min: 0.05, max: 0.35, step: 0.01, unit: 'of the air', wiredIn: 26, help: 'Fire regime (forest against savanna), plant growth (photorespiration), animal body size (giant arthropods above 27 %), oil preservation, and the hypoxia ceiling for people (partial pressure = oxygen × air pressure)' },
+  { key: 'crustIron', label: 'Crustal iron', min: 0.2, max: 5, step: 0.1, unit: 'x Earth', wiredIn: 26, help: 'Iron potential of the shields and the density of iron deposits' },
+  { key: 'crustMetals', label: 'Crustal metals', min: 0.2, max: 5, step: 0.1, unit: 'x Earth', wiredIn: 26, help: 'Copper, gold and tin, and uranium potentials and deposit densities' },
 ];
+
+/** Earth's atmospheric oxygen fraction: every composition factor is exactly 1 here. */
+export const EARTH_O2 = 0.21;
 
 export const EARTH: PlanetParams = {
   seed: 2,
@@ -84,6 +96,9 @@ export const EARTH: PlanetParams = {
   greenhouse: 1,
   pressureBar: 1,
   eccentricity: 0.0167,
+  oxygen: EARTH_O2,
+  crustIron: 1,
+  crustMetals: 1,
 };
 
 export interface Preset {
@@ -107,6 +122,9 @@ export const PRESETS: Preset[] = [
   { name: 'Greenhouse', params: { ...EARTH, greenhouse: 3 } },
   { name: 'Thin air', params: { ...EARTH, pressureBar: 0.3 } },
   { name: 'Eccentric orbit', params: { ...EARTH, eccentricity: 0.2 } },
+  { name: 'Oxygen-rich', params: { ...EARTH, oxygen: 0.3 } },
+  { name: 'Low oxygen', params: { ...EARTH, oxygen: 0.12 } },
+  { name: 'Iron world', params: { ...EARTH, crustIron: 3 } },
 ];
 
 /** Clamp every parameter into its spec range and normalize the seed to uint32. */

@@ -1,5 +1,6 @@
 import { REFERENCE_CELL_KM } from '../constants.ts';
 import type { Grid } from '../grid/grid.ts';
+import { EARTH_O2 } from '../params.ts';
 import type { ReliefState } from '../pipeline.ts';
 import { mix32 } from '../rng/hash.ts';
 import { CONTINENTAL } from '../tectonics/crust.ts';
@@ -17,7 +18,11 @@ import { BOUNDARY_SUBDUCTING } from '../tectonics/simulation.ts';
  * the potential times a density, from a hash of the seed, so a map of
  * sparse, fixed deposits comes out of a continuous field and never changes
  * the geography. The real Earth, which has no tectonic history here, gets
- * measured deposits instead (sim/earth.ts) and potentials of zero.
+ * measured deposits instead (sim/earth.ts) and potentials of zero. The
+ * planet's composition (M26) scales the potentials before the draw: the
+ * crustal iron and metal abundances multiply the ore potentials, and a
+ * low-oxygen atmosphere preserves the organic matter of the source rock,
+ * so a richer planet has a superset of a poorer one's deposits.
  */
 
 export const MINERALS = ['iron', 'copper', 'gold', 'uranium', 'coal', 'oil', 'salt'] as const;
@@ -100,8 +105,22 @@ function hopsFrom(grid: Grid, marked: Uint8Array, reach: number): Uint8Array {
   return out;
 }
 
-/** Potentials and deposits of a relief state; `seed` draws the deposits, `radiusKm` scales the reach constants to the grid. */
-export function computeMinerals(grid: Grid, state: ReliefState, seaLevel: number, seed: number, radiusKm: number): MineralFields {
+/** Composition (M26): anoxic seas preserve organic matter, so the oil source rock scales with Earth's oxygen over the planet's, clamped. */
+export const OIL_PRESERVATION_MIN = 0.5;
+export const OIL_PRESERVATION_MAX = 2;
+export function oilPreservation(oxygen: number): number {
+  return Math.min(OIL_PRESERVATION_MAX, Math.max(OIL_PRESERVATION_MIN, EARTH_O2 / oxygen));
+}
+/** Crustal abundances relative to Earth, and the oxygen fraction, that scale the potentials before the deposits are drawn. */
+export interface Composition {
+  crustIron: number;
+  crustMetals: number;
+  oxygen: number;
+}
+export const EARTH_COMPOSITION: Composition = { crustIron: 1, crustMetals: 1, oxygen: EARTH_O2 };
+
+/** Potentials and deposits of a relief state; `seed` draws the deposits, `radiusKm` scales the reach constants to the grid, `composition` scales the potentials (exactly 1 on Earth). */
+export function computeMinerals(grid: Grid, state: ReliefState, seaLevel: number, seed: number, radiusKm: number, composition: Composition = EARTH_COMPOSITION): MineralFields {
   const n = grid.n;
   const potential = new Float64Array(MINERAL_COUNT * n);
   const deposits = new Uint8Array(n);
@@ -138,18 +157,18 @@ export function computeMinerals(grid: Grid, state: ReliefState, seaLevel: number
     let gold = 0;
     let uranium = 0;
     if (continental && land) {
-      iron = SHIELD_ORE_SHARE * shield[j] * (1 - cover);
+      iron = clamp01(SHIELD_ORE_SHARE * shield[j] * (1 - cover) * composition.crustIron);
       const near = trenchHops[j] <= arcReach ? 1 : 0.5;
-      copper = clamp01(state.volcanic[j] / ARC_FULL_KM) * near * (0.5 + 0.5 * exposure);
+      copper = clamp01(clamp01(state.volcanic[j] / ARC_FULL_KM) * near * (0.5 + 0.5 * exposure) * composition.crustMetals);
       const orogenic = orogeny >= 0 ? clamp01((state.thickness[j] - OROGENIC_MIN_KM) / (OROGENIC_FULL_KM - OROGENIC_MIN_KM)) : 0;
-      gold = orogenic * exposure;
+      gold = clamp01(orogenic * exposure * composition.crustMetals);
       const basin = state.sediment[j] >= URANIUM_BASIN_SEDIMENT_KM && shieldHops[j] <= basinReach && shieldMask[j] === 0
         ? 0.6 * clamp01(state.sediment[j] / COVER_KM)
         : 0;
-      uranium = Math.max(SHIELD_ORE_SHARE * 0.7 * shield[j] * (1 - cover), basin);
+      uranium = clamp01(Math.max(SHIELD_ORE_SHARE * 0.7 * shield[j] * (1 - cover), basin) * composition.crustMetals);
     }
     const coal = land ? clamp01(state.coal[j] / COAL_FULL_KM) : 0;
-    const oil = continental ? clamp01(state.oil[j] / OIL_FULL_KM) * clamp01(state.sediment[j] / OIL_BURIAL_KM) : 0;
+    const oil = continental ? clamp01(clamp01(state.oil[j] / OIL_FULL_KM) * clamp01(state.sediment[j] / OIL_BURIAL_KM) * oilPreservation(composition.oxygen)) : 0;
     const salt = land ? clamp01(state.salt[j] / SALT_FULL_KM) : 0;
     const values = [iron, copper, gold, uranium, coal, oil, salt];
     let bits = 0;

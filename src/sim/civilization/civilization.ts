@@ -1,6 +1,7 @@
 import { VEG_BOREAL, VEG_DESERT, VEG_ICE, VEG_MEDITERRANEAN, VEG_RAINFOREST, VEG_SAVANNA, VEG_SCRUB, VEG_SEASONAL, VEG_STEPPE, VEG_TEMPERATE, VEG_TEMPERATE_RAIN, VEG_TUNDRA, VEG_WETLAND } from '../biosphere/flora.ts';
 import { REFERENCE_CELL_KM } from '../constants.ts';
 import type { Grid } from '../grid/grid.ts';
+import { EARTH_O2, relativeGravity, type PlanetParams } from '../params.ts';
 import type { ReliefState } from '../pipeline.ts';
 import { MINERAL_COUNT } from '../resources/minerals.ts';
 
@@ -18,7 +19,10 @@ import { MINERAL_COUNT } from '../resources/minerals.ts';
  * (slower across mountains, deserts and tundra, faster along coasts) and
  * across straits (costly per cell of open water, free where the glacial
  * sea level exposes the floor), timed so the Earth's own spread takes
- * about seventy thousand years.
+ * about seventy thousand years. The planet's air (M26) sets a hypoxia
+ * ceiling: the oxygen partial pressure, from the oxygen fraction and the
+ * pressure, shifts Earth's habitation limits up or down by the scale
+ * height, in the comfort of a cell and in the cost of crossing it.
  */
 
 /** Habitability: growth for full food, mm of rain over 250 for full water, the comfortable band of annual means and the range past which a season is hostile. */
@@ -29,6 +33,26 @@ export const COMFORT_MIN_C = 5;
 export const COMFORT_MAX_C = 25;
 export const COMFORT_SPAN_C = 15;
 export const HARSH_RANGE_C = 40;
+/** Air (M26): Earth's atmospheric scale height, m (divided by the relative gravity); the heights between which permanent habitation fades on Earth (La Rinconada at 5,100 m is the highest town); both shifted by the planet's oxygen partial pressure. */
+export const SCALE_HEIGHT_M = 8400;
+export const PLATEAU_M = 5000;
+export const CEILING_M = 6500;
+export const HABITABILITY_TERMS = ['food', 'water', 'comfort', 'air'] as const;
+export function scaleHeightM(params: PlanetParams): number {
+  return SCALE_HEIGHT_M / relativeGravity(params);
+}
+/** Height by which the planet's air shifts Earth's habitation limits: exactly zero on Earth, negative where the oxygen partial pressure is lower. */
+export function hypoxiaShiftM(params: PlanetParams): number {
+  return scaleHeightM(params) * Math.log((params.oxygen * params.pressureBar) / EARTH_O2);
+}
+/** Oxygen partial pressure at a height, atm (Earth's sea level 0.21). */
+export function oxygenPartialPressure(params: PlanetParams, heightM: number): number {
+  return params.oxygen * params.pressureBar * Math.exp(-heightM / scaleHeightM(params));
+}
+/** The air term of habitability: 1 up to the plateau height, 0 at the ceiling, both shifted by the planet's air. */
+export function airTerm(params: PlanetParams, heightM: number): number {
+  return clamp01((CEILING_M + hypoxiaShiftM(params) - heightM) / (CEILING_M - PLATEAU_M));
+}
 /** Rivers that water a cell (irrigation) and that count as a city's river, km^3/yr; the river that makes a mouth. */
 export const RIVER_KM3 = 40;
 export const BIG_RIVER_KM3 = 4000;
@@ -76,7 +100,7 @@ export interface CityInfo {
 
 export interface CivilizationFields {
   habitability: Float64Array;
-  /** Food, water and comfort terms, cell-major (cell * 3 + k). */
+  /** Food, water, comfort and air terms, cell-major (cell * 4 + k, HABITABILITY_TERMS order). */
   habitabilityTerms: Float64Array;
   agriculture: Float64Array;
   citySite: Float64Array;
@@ -89,6 +113,8 @@ export interface CivilizationFields {
 }
 
 export interface CivilizationInputs {
+  /** The planet's parameters: the air (oxygen, pressure, gravity) sets the hypoxia ceiling (M26). */
+  params: PlanetParams;
   areaKm2: Float64Array;
   radiusKm: number;
   temperatureAnnual: Float64Array;
@@ -233,7 +259,8 @@ export function computeCivilization(grid: Grid, state: ReliefState, seaLevel: nu
 
   // Habitability and agriculture.
   const habitability = new Float64Array(n);
-  const habitabilityTerms = new Float64Array(3 * n);
+  const T = HABITABILITY_TERMS.length;
+  const habitabilityTerms = new Float64Array(T * n);
   const agriculture = new Float64Array(n);
   const water = new Float64Array(n);
   for (let i = 0; i < n; i++) {
@@ -259,10 +286,12 @@ export function computeCivilization(grid: Grid, state: ReliefState, seaLevel: nu
       if (v > hi) hi = v;
     }
     if (hi - lo > HARSH_RANGE_C) comfort *= 0.6;
-    habitabilityTerms[3 * i] = food;
-    habitabilityTerms[3 * i + 1] = water[i];
-    habitabilityTerms[3 * i + 2] = comfort;
-    habitability[i] = Math.sqrt(food * water[i]) * comfort;
+    const air = airTerm(input.params, state.elevation[i] - seaLevel);
+    habitabilityTerms[T * i] = food;
+    habitabilityTerms[T * i + 1] = water[i];
+    habitabilityTerms[T * i + 2] = comfort;
+    habitabilityTerms[T * i + 3] = air;
+    habitability[i] = Math.sqrt(food * water[i]) * comfort * air;
     agriculture[i] = clamp01(input.soil[i] * clamp01(input.npp[i] / FARM_NPP) * (FARM_MULTIPLIER[input.vegetation[i]] ?? 0) * (0.3 + 0.7 * water[i]) * 1.6);
   }
 
@@ -353,7 +382,7 @@ export function computeCivilization(grid: Grid, state: ReliefState, seaLevel: nu
       cityTerms[i * CITY_TERMS.length + k] = terms[k];
       score += CITY_WEIGHTS[k] * terms[k];
     }
-    citySite[i] = score * habitabilityTerms[3 * i + 2];
+    citySite[i] = score * habitabilityTerms[T * i + 2] * habitabilityTerms[T * i + 3];
   }
 
   // Candidate cities: the best cells, each at least CITY_SPACING_KM from the ones already chosen.
@@ -418,7 +447,8 @@ function disperse(
   if (origin < 0) origin = fallback;
   if (origin < 0) return { arrivalKa, origin };
 
-  // Cost to enter a cell, in cells of easy land.
+  // Cost to enter a cell, in cells of easy land; the planet's air shifts the mountain line and sets a ceiling (M26).
+  const shift = hypoxiaShiftM(input.params);
   const enter = new Float64Array(n);
   for (let i = 0; i < n; i++) {
     if (land[i]) {
@@ -426,9 +456,14 @@ function disperse(
         enter[i] = Infinity;
         continue;
       }
+      const rel = state.elevation[i] - seaLevel;
+      if (rel > CEILING_M + shift) {
+        enter[i] = Infinity;
+        continue;
+      }
       let c = 1;
       const v = input.vegetation[i];
-      if (state.elevation[i] - seaLevel > MOUNTAIN_M) c *= COST_MOUNTAIN;
+      if (rel > MOUNTAIN_M + shift) c *= COST_MOUNTAIN;
       if (v === VEG_DESERT) c *= COST_DESERT;
       else if (v === VEG_TUNDRA) c *= COST_TUNDRA;
       else if (v === VEG_RAINFOREST) c *= COST_RAINFOREST;

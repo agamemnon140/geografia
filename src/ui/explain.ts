@@ -2,12 +2,12 @@ import { cloudAt, koppenName, precipitationAt, temperatureAt, windAt, type Layer
 import { ANNUAL, SAMPLES } from '../sim/climate/insolation.ts';
 import { Grid, cellAreasKm2 } from '../sim/grid/grid.ts';
 import type { World } from '../sim/pipeline.ts';
-import { MEGAFAUNA_HERBIVORES, MEGAFAUNA_PREDATORS, REALM_NONE } from '../sim/biosphere/fauna.ts';
-import { SOIL_BASE, SOIL_WEIGHT, SUNSHINE_REFERENCE_H, SUNSHINE_WEIGHT, VEGETATION_NAMES, miamiNpp } from '../sim/biosphere/flora.ts';
-import { CITY_TERMS, CITY_WEIGHTS, UNREACHED } from '../sim/civilization/civilization.ts';
+import { MEGAFAUNA_GIANT_ARTHROPODS, MEGAFAUNA_HERBIVORES, MEGAFAUNA_PREDATORS, REALM_NONE, aerobicScope } from '../sim/biosphere/fauna.ts';
+import { SOIL_BASE, SOIL_WEIGHT, SUNSHINE_REFERENCE_H, SUNSHINE_WEIGHT, TROPICAL_FOREST_MM, VEGETATION_NAMES, carbonGrowthFactor, fireFactor, miamiNpp, oxygenGrowthFactor } from '../sim/biosphere/flora.ts';
+import { CEILING_M, CITY_TERMS, CITY_WEIGHTS, HABITABILITY_TERMS, PLATEAU_M, UNREACHED, hypoxiaShiftM, oxygenPartialPressure } from '../sim/civilization/civilization.ts';
 import { REALM_NAMES } from '../render/layers.ts';
 import { LINEAGE_COUNT } from '../sim/tectonics/crust.ts';
-import { MINERALS, MINERAL_COUNT, MINERAL_NAMES } from '../sim/resources/minerals.ts';
+import { MINERALS, MINERAL_COUNT, MINERAL_NAMES, oilPreservation } from '../sim/resources/minerals.ts';
 import { BOUNDARY_NAMES } from '../sim/tectonics/simulation.ts';
 
 /**
@@ -159,8 +159,10 @@ export function explainCell(world: World, cell: number, sample: number): Section
     resources.push(world.reference ? 'no measured deposit here' : 'none: no shield, arc, collision belt, swamp, shallow sea or salt pan in this cell\'s history');
   }
   if (!world.reference) {
+    const comp = world.params;
     resources.push(
       `history     swamp sediment ${world.coal[cell].toFixed(2)} km, shallow-sea sediment ${world.oil[cell].toFixed(2)} km, evaporite ${world.salt[cell].toFixed(3)} km`,
+      `composition iron ×${comp.crustIron.toFixed(1)}, copper, gold and uranium ×${comp.crustMetals.toFixed(1)}, oil preservation ×${oilPreservation(comp.oxygen).toFixed(2)} (oxygen ${(100 * comp.oxygen).toFixed(0)} % of the air)`,
     );
   }
   sections.push({ title: 'Resources', lines: resources, group: 'resources' });
@@ -174,9 +176,9 @@ export function explainCell(world: World, cell: number, sample: number): Section
       const sunFactor = 1 + SUNSHINE_WEIGHT * Math.max(-1, Math.min(1, (sun - SUNSHINE_REFERENCE_H) / SUNSHINE_REFERENCE_H));
       const soilFactor = 1 - SOIL_WEIGHT / 2 + SOIL_WEIGHT * world.soil[cell];
       flora.push(
-        `growth      ${world.npp[cell].toFixed(0)} g C/m²/yr = Miami ${base.toFixed(0)} (the lesser of warmth and rain) × sun ${sunFactor.toFixed(2)} × soil ${soilFactor.toFixed(2)}`,
+        `growth      ${world.npp[cell].toFixed(0)} g C/m²/yr = Miami ${base.toFixed(0)} (the lesser of warmth and rain) × sun ${sunFactor.toFixed(2)} × soil ${soilFactor.toFixed(2)} × oxygen ${oxygenGrowthFactor(world.params.oxygen).toFixed(2)} × carbon ${carbonGrowthFactor(world.params.greenhouse).toFixed(2)}`,
         `soil        ${world.soil[cell].toFixed(2)} = base ${SOIL_BASE} + ash ${world.soilAsh[cell].toFixed(2)} + alluvium ${world.soilAlluvium[cell].toFixed(2)} − losses ${world.soilLoss[cell].toFixed(2)} (leaching, old shield, cold)`,
-        `vegetation  ${VEGETATION_NAMES[world.vegetation[cell]]}`,
+        `vegetation  ${VEGETATION_NAMES[world.vegetation[cell]]}; fire regime ×${fireFactor(world.params.oxygen).toFixed(2)} (forest needs ${(TROPICAL_FOREST_MM * fireFactor(world.params.oxygen)).toFixed(0)} mm where a month runs dry)`,
       );
     }
     sections.push({ title: 'Flora', lines: flora, group: 'life' });
@@ -195,20 +197,23 @@ export function explainCell(world: World, cell: number, sample: number): Section
       `realm       ${realm === REALM_NONE ? 'none' : REALM_NAMES[realm]}${shares.length ? ` (lineages: ${shares.join(', ')})` : ''}${world.reference ? '; by present connectivity, no history' : ''}`,
       `endemism    ${world.endemism[cell].toFixed(2)}: share of this fauna found on no other landmass`,
       `richness    ${world.richness[cell].toFixed(2)} = growth term × landmass term (${area >= 1e6 ? `${(area / 1e6).toFixed(1)} million` : area.toFixed(0)} km²)`,
-      `megafauna   ${world.megafauna[cell] & MEGAFAUNA_PREDATORS ? 'large herbivores and large predators' : world.megafauna[cell] & MEGAFAUNA_HERBIVORES ? 'large herbivores, no large predators (the landmass is too small)' : 'none: too little growth or too small a landmass'}`,
+      `megafauna   ${world.megafauna[cell] & MEGAFAUNA_PREDATORS ? 'large herbivores and large predators' : world.megafauna[cell] & MEGAFAUNA_HERBIVORES ? 'large herbivores, no large predators (the landmass is too small)' : `none: too little growth or too small a landmass${aerobicScope(world.params.oxygen) < 1 ? ` (thin air: aerobic scope ${aerobicScope(world.params.oxygen).toFixed(2)})` : ''}`}${world.megafauna[cell] & MEGAFAUNA_GIANT_ARTHROPODS ? `; giant arthropods (oxygen ${(100 * world.params.oxygen).toFixed(0)} %)` : ''}`,
     );
     sections.push({ title: 'Fauna', lines: fauna, group: 'life' });
 
     // Civilization (M24): the indices with every term.
     const civ: string[] = [];
     const h = world.habitabilityTerms;
+    const T = HABITABILITY_TERMS.length;
+    const shift = hypoxiaShiftM(world.params);
     civ.push(
-      `habitability ${world.habitability[cell].toFixed(2)} = √(food ${h[3 * cell].toFixed(2)} × water ${h[3 * cell + 1].toFixed(2)}) × comfort ${h[3 * cell + 2].toFixed(2)}`,
+      `habitability ${world.habitability[cell].toFixed(2)} = √(food ${h[T * cell].toFixed(2)} × water ${h[T * cell + 1].toFixed(2)}) × comfort ${h[T * cell + 2].toFixed(2)} × air ${h[T * cell + 3].toFixed(2)}`,
+      `air         oxygen ${oxygenPartialPressure(world.params, world.elevation[cell] - world.seaLevel).toFixed(3)} atm here (${(world.params.oxygen * world.params.pressureBar).toFixed(2)} at sea level): people live fully up to ${(PLATEAU_M + shift).toFixed(0)} m on this planet and not above ${(CEILING_M + shift).toFixed(0)} m`,
       `farmland    ${world.agriculture[cell].toFixed(2)} (soil × growth × the vegetation's suitability × water)`,
     );
     const rank = world.cities.findIndex((c) => c.cell === cell);
     const terms = CITY_TERMS.map((name, k) => `${name} ${world.cityTerms[cell * CITY_TERMS.length + k].toFixed(2)}×${CITY_WEIGHTS[k]}`).join(', ');
-    civ.push(`city site   ${world.citySite[cell].toFixed(2)}${rank >= 0 ? ` (candidate city #${rank + 1})` : ''} = (${terms}) × comfort`);
+    civ.push(`city site   ${world.citySite[cell].toFixed(2)}${rank >= 0 ? ` (candidate city #${rank + 1})` : ''} = (${terms}) × comfort × air`);
     const ka = world.arrivalKa[cell];
     civ.push(
       `people      ${cell === world.origin ? 'the origin of the dispersal' : ka === UNREACHED ? 'not reached within 100,000 years of the origin' : `arrive ${ka.toFixed(1)} thousand years after the origin`}`,

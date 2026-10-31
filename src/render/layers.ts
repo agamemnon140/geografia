@@ -1,7 +1,7 @@
 import { ANNUAL, SAMPLES } from '../sim/climate/insolation.ts';
 import { KOPPEN_NAMES } from '../sim/climate/koppen.ts';
 import type { World } from '../sim/pipeline.ts';
-import { MEGAFAUNA_HERBIVORES, MEGAFAUNA_PREDATORS, REALM_NONE } from '../sim/biosphere/fauna.ts';
+import { MEGAFAUNA_GIANT_ARTHROPODS, MEGAFAUNA_HERBIVORES, MEGAFAUNA_PREDATORS, REALM_NONE } from '../sim/biosphere/fauna.ts';
 import { UNREACHED } from '../sim/civilization/civilization.ts';
 import { VEGETATION_NAMES } from '../sim/biosphere/flora.ts';
 import { LINEAGE_COUNT } from '../sim/tectonics/crust.ts';
@@ -319,6 +319,8 @@ const RICHNESS_RAMP: Stop[] = [
 const MEGAFAUNA_NONE: RGB = [215, 212, 205];
 const MEGAFAUNA_HERBIVORE_COLOR: RGB = [210, 170, 90];
 const MEGAFAUNA_PREDATOR_COLOR: RGB = [150, 60, 40];
+/** Giant arthropods (M26, oxygen above 27 %) tint the cell toward violet. */
+const MEGAFAUNA_ARTHROPOD_TINT: RGB = [120, 60, 160];
 
 const HABITABILITY_RAMP: Stop[] = [
   [0, [225, 222, 215]],
@@ -753,6 +755,7 @@ export const LAYERS: Layer[] = [
         { color: MEGAFAUNA_PREDATOR_COLOR, label: 'large herbivores and large predators (productive ground on a landmass above a million km²)' },
         { color: MEGAFAUNA_HERBIVORE_COLOR, label: 'large herbivores only (a landmass above 200,000 km²)' },
         { color: MEGAFAUNA_NONE, label: 'none: too little growth, ice, or too small a landmass' },
+        { color: mix(MEGAFAUNA_HERBIVORE_COLOR, MEGAFAUNA_ARTHROPOD_TINT, 0.5), label: 'tinted violet where giant arthropods fly (oxygen above 27 % of the air)' },
       ],
     },
     relief: 'light',
@@ -776,7 +779,8 @@ function megafaunaColor(world: World, i: number): RGB {
   if (rel < 0) return koppenSea(rel);
   if (world.lake[i] >= 0) return LAKE_COLOR;
   const bits = world.megafauna[i];
-  return bits & MEGAFAUNA_PREDATORS ? MEGAFAUNA_PREDATOR_COLOR : bits & MEGAFAUNA_HERBIVORES ? MEGAFAUNA_HERBIVORE_COLOR : MEGAFAUNA_NONE;
+  const base = bits & MEGAFAUNA_PREDATORS ? MEGAFAUNA_PREDATOR_COLOR : bits & MEGAFAUNA_HERBIVORES ? MEGAFAUNA_HERBIVORE_COLOR : MEGAFAUNA_NONE;
+  return bits & MEGAFAUNA_GIANT_ARTHROPODS ? mix(base, MEGAFAUNA_ARTHROPOD_TINT, 0.5) : base;
 }
 
 /** A land ramp with the sea dim and the lakes blue. */

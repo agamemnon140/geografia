@@ -3,7 +3,7 @@ import { SAMPLES } from '../src/sim/climate/insolation.ts';
 import { KOPPEN_NAMES, classifyKoppen, koppenGroup } from '../src/sim/climate/koppen.ts';
 import { DEG } from '../src/sim/grid/geometry.ts';
 import { Grid } from '../src/sim/grid/grid.ts';
-import { EARTH } from '../src/sim/params.ts';
+import { EARTH, validateParams } from '../src/sim/params.ts';
 import { build, type World } from '../src/sim/pipeline.ts';
 import { paramsFromHash, paramsToHash } from '../src/ui/url.ts';
 
@@ -107,10 +107,13 @@ describe('statistics across seeds', () => {
 
 describe('shareable parameters', () => {
   it('round-trip through the URL hash', () => {
-    const params = { ...EARTH, seed: 123456, radiusKm: 7000, axialTiltDeg: 30 };
+    const params = { ...EARTH, seed: 123456, radiusKm: 7000, axialTiltDeg: 30, oxygen: 0.3, crustIron: 2.5 };
     const parsed = paramsFromHash(paramsToHash(params));
     expect(parsed).toEqual(params);
     expect(paramsFromHash('')).toBeNull();
     expect(paramsFromHash('#seed=5&radiusKm=junk')?.radiusKm).toBe(EARTH.radiusKm);
+    // Links from before M26 carry no composition: Earth's.
+    expect(paramsFromHash('#seed=5')?.oxygen).toBe(EARTH.oxygen);
+    expect(validateParams({ ...EARTH, oxygen: 0.9 }).oxygen).toBe(0.35);
   });
 });
