@@ -1,7 +1,7 @@
 import type { Grid } from '../grid/grid.ts';
 import { EARTH_O2 } from '../params.ts';
 import type { ReliefState } from '../pipeline.ts';
-import { LINEAGE_COUNT } from '../tectonics/crust.ts';
+import { LINEAGE_COUNT, LINEAGE_SECTOR_NAMES } from '../tectonics/crust.ts';
 
 /**
  * Fauna (M23; DESIGN 3.12): biogeographic realms, endemism, richness and
@@ -57,6 +57,10 @@ export interface FaunaFields {
   /** Landmass id per cell (-1 on water) and the landmasses' areas, km^2. */
   landmass: Int32Array;
   landmassAreas: number[];
+  /** Names of the eight lineages (M27): the compass sector of the supercontinent where each began, or, without a history, the landmass that seeds it. */
+  names: string[];
+  /** Per lineage, the cell at the heart of its largest contiguous realm (-1 where it dominates nowhere): where the map writes its name. */
+  labelCells: number[];
 }
 
 function clamp01(v: number): number {
@@ -233,5 +237,89 @@ export function computeFauna(
     }
     if (!iceSheet[i] && oxygen >= GIANT_ARTHROPOD_O2 && npp[i] >= HERBIVORE_NPP) megafauna[i] |= MEGAFAUNA_GIANT_ARTHROPODS;
   }
-  return { lineage, realm, endemism, richness, megafauna, landmass, landmassAreas: areas };
+  const names = lineageNames(grid, history, landmass, areas, areaKm2);
+  const labelCells = realmLabelCells(grid, realm, areaKm2);
+  return { lineage, realm, endemism, richness, megafauna, landmass, landmassAreas: areas, names, labelCells };
+}
+
+function ordinal(k: number): string {
+  return k === 1 ? 'largest' : k === 2 ? '2nd largest' : k === 3 ? '3rd largest' : `${k}th largest`;
+}
+
+/** Lineage names (M27): the seeding sector on a planet with a history; the seeding landmass (the k-th largest, with where it lies) without one. */
+export function lineageNames(grid: Grid, history: boolean, landmass: Int32Array, areas: number[], areaKm2: Float64Array): string[] {
+  if (history) return LINEAGE_SECTOR_NAMES.map((name) => name);
+  const ranked = areas.map((a, id) => [a, id] as const).sort((p, q) => q[0] - p[0]).slice(0, HISTORYLESS_REALMS);
+  const names: string[] = [];
+  for (let k = 0; k < LINEAGE_COUNT; k++) {
+    if (k >= ranked.length) {
+      names.push('unused');
+      continue;
+    }
+    const id = ranked[k][1];
+    let x = 0;
+    let y = 0;
+    let z = 0;
+    for (let i = 0; i < grid.n; i++) {
+      if (landmass[i] !== id) continue;
+      const a = areaKm2[i];
+      x += a * grid.xyz[3 * i];
+      y += a * grid.xyz[3 * i + 1];
+      z += a * grid.xyz[3 * i + 2];
+    }
+    const lat = (Math.atan2(z, Math.hypot(x, y)) * 180) / Math.PI;
+    const lon = (Math.atan2(y, x) * 180) / Math.PI;
+    names.push(`${ordinal(k + 1)} landmass (${Math.abs(lat).toFixed(0)}°${lat >= 0 ? 'N' : 'S'} ${Math.abs(lon).toFixed(0)}°${lon >= 0 ? 'E' : 'W'})`);
+  }
+  return names;
+}
+
+/** Where each lineage's name goes on the map (M27): the cell of its largest contiguous realm nearest that realm's centroid, -1 where it dominates nowhere. */
+export function realmLabelCells(grid: Grid, realm: Uint8Array, areaKm2: Float64Array): number[] {
+  const n = grid.n;
+  const seen = new Uint8Array(n);
+  const queue = new Int32Array(n);
+  const bestArea = new Float64Array(LINEAGE_COUNT);
+  const bestCell: number[] = new Array<number>(LINEAGE_COUNT).fill(-1);
+  for (let s = 0; s < n; s++) {
+    const k = realm[s];
+    if (seen[s] || k >= LINEAGE_COUNT) continue;
+    let head = 0;
+    let tail = 0;
+    queue[tail++] = s;
+    seen[s] = 1;
+    let area = 0;
+    let x = 0;
+    let y = 0;
+    let z = 0;
+    while (head < tail) {
+      const i = queue[head++];
+      const a = areaKm2[i];
+      area += a;
+      x += a * grid.xyz[3 * i];
+      y += a * grid.xyz[3 * i + 1];
+      z += a * grid.xyz[3 * i + 2];
+      for (let t = grid.nbStart[i]; t < grid.nbStart[i + 1]; t++) {
+        const j = grid.nb[t];
+        if (!seen[j] && realm[j] === k) {
+          seen[j] = 1;
+          queue[tail++] = j;
+        }
+      }
+    }
+    if (area <= bestArea[k]) continue;
+    bestArea[k] = area;
+    let best = s;
+    let bestDot = -Infinity;
+    for (let q = 0; q < tail; q++) {
+      const i = queue[q];
+      const dot = x * grid.xyz[3 * i] + y * grid.xyz[3 * i + 1] + z * grid.xyz[3 * i + 2];
+      if (dot > bestDot) {
+        bestDot = dot;
+        best = i;
+      }
+    }
+    bestCell[k] = best;
+  }
+  return bestCell;
 }

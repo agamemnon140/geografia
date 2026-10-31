@@ -140,6 +140,23 @@ describe('layers', () => {
     }
   });
 
+  it('give the realms and the cities a legend for the world on screen (M27)', () => {
+    const realms = LAYERS.find((l) => l.id === 'realms');
+    const cities = LAYERS.find((l) => l.id === 'citySite');
+    const realmLegend = realms?.legendFor?.(world);
+    expect(realmLegend?.kind).toBe('categories');
+    if (realmLegend?.kind === 'categories') expect(realmLegend.items[0].label).toContain(world.lineageNames[0]);
+    const cityLegend = cities?.legendFor?.(world);
+    expect(cityLegend?.kind).toBe('ramp');
+    if (cityLegend?.kind === 'ramp') expect(cityLegend.lines?.[0]).toContain('#1');
+    const labels = realms?.labels?.(world) ?? [];
+    expect(labels.length).toBeGreaterThan(0);
+    for (const label of labels) {
+      expect(label.text.length).toBeGreaterThan(0);
+      expect(world.elevation[label.cell]).toBeGreaterThanOrEqual(world.seaLevel);
+    }
+  });
+
   it('paint every cell with finite colors and the background outside the disc', () => {
     for (const layer of LAYERS) {
       const colors = cellColors(world, layer, 0);

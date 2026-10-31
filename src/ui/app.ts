@@ -225,14 +225,28 @@ export function mountApp(root: HTMLElement): void {
   const forestShare = (v: number[]): number => v[VEG_BOREAL] + v[VEG_TEMPERATE] + v[VEG_TEMPERATE_RAIN] + v[VEG_MEDITERRANEAN] + v[VEG_SEASONAL] + v[VEG_RAINFOREST];
   const grassShare = (v: number[]): number => v[VEG_STEPPE] + v[VEG_SAVANNA];
   const dryShare = (v: number[]): number => v[VEG_SCRUB] + v[VEG_DESERT];
+  /** The realms of a world, largest first: each lineage's share of the land and the landmass holding most of it (M27). */
+  const realmList = (w: World): string => {
+    const ranks = w.landmassAreas.map((a, id) => [a, id] as const).sort((p, q) => q[0] - p[0]).map(([, id]) => id);
+    const rankOf = (id: number): string => {
+      const r = ranks.indexOf(id) + 1;
+      return r === 1 ? 'the largest landmass' : r === 2 ? 'the 2nd landmass' : r === 3 ? 'the 3rd landmass' : `the ${r}th landmass`;
+    };
+    return w.stats.realmShares
+      .map((share, k) => ({ share, k }))
+      .filter(({ share }) => share >= 0.005)
+      .sort((a, b) => b.share - a.share)
+      .map(({ share, k }) => `${w.lineageNames[k]} ${pct(share, 0)} of the land${w.stats.realmMainLandmass[k] >= 0 ? ` (mostly ${rankOf(w.stats.realmMainLandmass[k])})` : ''}`)
+      .join(', ');
+  };
   /** Rows shown only beyond geography. */
   const beyondRows = (w: World): [string, string][] => [
     ['Deposits', w.reference && w.stats.depositCounts.every((c) => c === 0)
       ? 'not available for the measured relief (no tectonic history, no shipped data)'
       : MINERALS.map((m, k) => `${MINERAL_NAMES[m]} ${w.stats.depositCounts[k]}`).join(', ')],
     ['Primary production', `${w.stats.landNppGtC.toFixed(0)} Gt C/yr on land; forest ${pct(forestShare(w.stats.vegetationShares), 0)}, grassland ${pct(grassShare(w.stats.vegetationShares), 0)}, desert and scrub ${pct(dryShare(w.stats.vegetationShares), 0)}`],
-    ['Faunal realms', `${w.stats.realmCount} on land above a million km²${w.reference ? ' (by present connectivity: no history)' : ''}; mean endemism ${w.stats.meanEndemism.toFixed(2)}`],
-    ['Candidate cities', w.cities.slice(0, 5).map((c, k) => `#${k + 1} ${(c.score * 100).toFixed(0)}`).join(', ') + ` (${w.stats.cityCount} marked on the city-site layer)`],
+    ['Faunal realms', `${w.stats.realmCount} above a million km²${w.reference ? ' (by present connectivity: no history)' : ''}: ${realmList(w)}; mean endemism ${w.stats.meanEndemism.toFixed(2)}`],
+    ['Candidate cities', w.cities.slice(0, 5).map((c, k) => `#${k + 1} site ${c.score.toFixed(2)} (habitability ${w.habitability[c.cell].toFixed(2)})`).join(', ') + ` (${w.stats.cityCount} on the city-site layer, ranked by the site score, not by habitability)`],
     ['Human dispersal', `${w.stats.landmassesReached} of ${w.stats.landmassesTotal} landmasses above 100,000 km² reached; the farthest ${w.stats.dispersalMaxKa.toFixed(0)} thousand years after the origin`],
   ];
   const statRows = (w: World): [string, string][] => {
@@ -345,6 +359,7 @@ export function mountApp(root: HTMLElement): void {
   const showWorld = (w: World): void => {
     world = w;
     paintViews();
+    renderLegend(layerById(activeLayerId()), legendBox, w);
     renderStats();
     if (selectedCell >= 0 && selectedCell < w.n) renderInspector(selectedCell);
     else {
@@ -689,7 +704,7 @@ export function mountApp(root: HTMLElement): void {
     mapA.setLayer(id);
     mapB.setLayer(id);
     sampleRow.classList.toggle('hidden', !layerById(id).seasonal);
-    renderLegend(layerById(id), legendBox);
+    renderLegend(layerById(id), legendBox, world);
   };
 
   presetSelect.addEventListener('change', () => {

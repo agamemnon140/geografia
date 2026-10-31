@@ -96,6 +96,9 @@ export interface WorldStats {
   vegetationShares: number[];
   /** Lineages that dominate more than a million km^2 of land (M23). */
   realmCount: number;
+  /** Share of the land each lineage dominates, and the landmass holding most of that realm (-1 where none), both in lineage order (M27). */
+  realmShares: number[];
+  realmMainLandmass: number[];
   /** Area-weighted endemism over the land. */
   meanEndemism: number;
   /** Candidate cities found (M24); landmasses above 100,000 km^2 that people reach within the horizon, and how many there are; the latest arrival, thousands of years. */
@@ -208,6 +211,9 @@ export function computeStats(grid: Grid, relief: ReliefFields, hydro: HydrologyF
   const vegetationArea = new Array<number>(VEGETATION_NAMES.length).fill(0);
   let nppSum = 0;
   const realmArea = new Float64Array(LINEAGE_COUNT);
+  /** Area of each realm on each landmass, keyed lineage * landmasses + landmass (M27). */
+  const realmOnLandmass = new Map<number, number>();
+  const landmassCount = civ.landmassAreas.length;
   let endemismSum = 0;
   const reached = new Uint8Array(civ.landmassAreas.length);
   let dispersalMax = 0;
@@ -247,7 +253,13 @@ export function computeStats(grid: Grid, relief: ReliefFields, hydro: HydrologyF
       // km^2 times g/m^2 is 1e6 g; a gigaton is 1e15 g.
       nppSum += a * biome.npp[i] * 1e-9;
       vegetationArea[biome.vegetation[i]] += a;
-      if (biome.realm[i] < LINEAGE_COUNT) realmArea[biome.realm[i]] += a;
+      if (biome.realm[i] < LINEAGE_COUNT) {
+        realmArea[biome.realm[i]] += a;
+        if (civ.landmass[i] >= 0) {
+          const key = biome.realm[i] * landmassCount + civ.landmass[i];
+          realmOnLandmass.set(key, (realmOnLandmass.get(key) ?? 0) + a);
+        }
+      }
       endemismSum += a * biome.endemism[i];
       if (civ.arrivalKa[i] >= 0) {
         if (civ.landmass[i] >= 0) reached[civ.landmass[i]] = 1;
@@ -358,6 +370,19 @@ export function computeStats(grid: Grid, relief: ReliefFields, hydro: HydrologyF
     landNppGtC: nppSum,
     vegetationShares: vegetationArea.map((v) => (land > 0 ? v / land : 0)),
     realmCount: realmArea.filter((v) => v >= CONTINENT_MIN_KM2).length,
+    realmShares: Array.from(realmArea, (v) => (land > 0 ? v / land : 0)),
+    realmMainLandmass: Array.from(realmArea, (_, k) => {
+      let best = -1;
+      let bestArea = 0;
+      for (let id = 0; id < landmassCount; id++) {
+        const v = realmOnLandmass.get(k * landmassCount + id) ?? 0;
+        if (v > bestArea) {
+          bestArea = v;
+          best = id;
+        }
+      }
+      return best;
+    }),
     meanEndemism: land > 0 ? endemismSum / land : 0,
     cityCount: civ.cities.length,
     landmassesReached: civ.landmassAreas.filter((a, m) => a >= DISPERSAL_LANDMASS_KM2 && reached[m]).length,

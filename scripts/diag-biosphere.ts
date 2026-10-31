@@ -11,7 +11,6 @@ import { nearestCell } from '../src/sim/grid/locate.ts';
 import { PRESETS } from '../src/sim/params.ts';
 import { build } from '../src/sim/pipeline.ts';
 import { VEGETATION_NAMES } from '../src/sim/biosphere/flora.ts';
-import { REALM_NAMES } from '../src/render/layers.ts';
 import { LINEAGE_COUNT } from '../src/sim/tectonics/crust.ts';
 
 const [, , presetName = 'Earth', seedArg = '2'] = process.argv;
@@ -36,7 +35,7 @@ console.log(`faunal realms ${s.realmCount} on land above a million km2, mean end
     landArea += grid.area[i];
     if (w.realm[i] < LINEAGE_COUNT) realmArea[w.realm[i]] += grid.area[i];
   }
-  console.log('realm land shares: ' + Array.from(realmArea).map((a, k) => `${REALM_NAMES[k]} ${(100 * a / landArea).toFixed(0)}%`).join(', '));
+  console.log('realm land shares: ' + Array.from(realmArea).map((a, k) => `${w.lineageNames[k]} ${(100 * a / landArea).toFixed(0)}%`).join(', '));
 }
 VEGETATION_NAMES.forEach((name, k) => {
   if (k === 0) return;

@@ -18,9 +18,9 @@ import type { Raster } from './raster.ts';
 
 /** What a layer's colors mean, for the legend (DESIGN 8.4). */
 export type Legend =
-  | { kind: 'ramp'; stops: Stop[]; unit: string }
-  /** One swatch per item, or a row of swatches (`colors`) for a family of shades. */
-  | { kind: 'categories'; items: { color: RGB; colors?: RGB[]; label: string }[] }
+  | { kind: 'ramp'; stops: Stop[]; unit: string; lines?: string[] }
+  /** One swatch per item, or a row of swatches (`colors`) for a family of shades; `lines` are written after them. */
+  | { kind: 'categories'; items: { color: RGB; colors?: RGB[]; label: string }[]; lines?: string[] }
   | { kind: 'text'; items: string[] };
 
 /**
@@ -53,6 +53,8 @@ export interface Layer {
   /** True when the layer changes with the sample (month) selector. */
   seasonal?: boolean;
   legend?: Legend;
+  /** A legend for the world on screen (M27: the realms' names, the cities' scores); `legend` stays the static fallback. */
+  legendFor?(world: World): Legend;
   relief?: boolean | 'light';
   rivers?: boolean;
   cellColor(world: World, cell: number, sample: number): RGB;
@@ -293,8 +295,8 @@ export const VEGETATION_COLORS: RGB[] = [
   [90, 160, 140],
 ];
 
-/** The eight ancestral faunas, named by the colors that draw them (no blues). */
-export const REALM_NAMES: string[] = ['crimson', 'orange', 'gold', 'olive', 'green', 'teal', 'violet', 'rose'];
+/** The colors that draw the eight ancestral faunas (no blues), by name; the lineages themselves are named per world (`World.lineageNames`, M27). */
+export const REALM_COLOR_NAMES: string[] = ['crimson', 'orange', 'gold', 'olive', 'green', 'teal', 'violet', 'rose'];
 export const REALM_COLORS: RGB[] = [
   [190, 40, 60],
   [235, 130, 40],
@@ -711,12 +713,9 @@ export const LAYERS: Layer[] = [
     id: 'realms',
     name: 'Faunal realms',
     group: 'life',
-    legend: {
-      kind: 'categories',
-      items: REALM_NAMES.map((name, k): { color: RGB; label: string } => ({ color: REALM_COLORS[k], label: `${name} lineage` })).concat([
-        { color: LAND_WASH, label: 'paler where the dominant lineage holds a smaller share (a mixed fauna)' },
-      ]),
-    },
+    legend: realmsLegend(null),
+    legendFor: (world) => realmsLegend(world),
+    labels: (world) => world.realmLabelCells.flatMap((cell, k) => (cell >= 0 ? [{ cell, text: world.lineageNames[k] }] : [])),
     relief: 'light',
     cellColor: (world, i) => realmColor(world, i),
     smooth: (world, px) => (relief(world, px) < 0 ? koppenSea(relief(world, px)) : realmColor(world, px.cell)),
@@ -770,8 +769,31 @@ function realmColor(world: World, i: number): RGB {
   if (world.lake[i] >= 0) return LAKE_COLOR;
   const k = world.realm[i];
   if (k === REALM_NONE || k >= LINEAGE_COUNT) return LAND_WASH;
-  const share = world.lineage[i * LINEAGE_COUNT + k];
-  return mix(LAND_WASH, REALM_COLORS[k], 0.35 + 0.65 * share);
+  // The two strongest lineages blend by their shares (M27): a mixed fauna reads as a gradient, not as a line.
+  const base = i * LINEAGE_COUNT;
+  const share = world.lineage[base + k];
+  let second = -1;
+  let secondShare = 0;
+  for (let m = 0; m < LINEAGE_COUNT; m++) {
+    if (m !== k && world.lineage[base + m] > secondShare) {
+      secondShare = world.lineage[base + m];
+      second = m;
+    }
+  }
+  const hue = second >= 0 ? mix(REALM_COLORS[k], REALM_COLORS[second], secondShare / (share + secondShare)) : REALM_COLORS[k];
+  return mix(LAND_WASH, hue, 0.35 + 0.65 * share);
+}
+
+/** The realms legend: one row per lineage, named for the world on screen when there is one (M27). */
+function realmsLegend(world: World | null): Legend {
+  return {
+    kind: 'categories',
+    items: REALM_COLORS.map((color, k) => ({ color, label: world ? `${world.lineageNames[k]} lineage (${REALM_COLOR_NAMES[k]})` : `lineage ${k + 1} (${REALM_COLOR_NAMES[k]})` })),
+    lines: [
+      'Each color is the fauna descended from one of eight ancestral lineages that lived around the supercontinent at the start, named by the compass sector where each began (on the real Earth, by the landmass that seeds it).',
+      'Where two colors blend, the faunas mixed after their lands met; paler where the dominant lineage holds a smaller share. Sharp boundaries follow seas, deserts, mountain belts and polar ground: the barriers of the model.',
+    ],
+  };
 }
 
 function megafaunaColor(world: World, i: number): RGB {
@@ -827,6 +849,15 @@ const CIVILIZATION_LAYERS: Layer[] = [
       stops: CITY_RAMP,
       unit: 'score 0 to 1: river, harbor, fresh water, farmland within reach, defensibility, safety, minerals, centrality; white dots are the candidate cities, numbered best first',
     },
+    legendFor: (world) => ({
+      kind: 'ramp',
+      stops: CITY_RAMP,
+      unit: 'score 0 to 1: river, harbor, fresh water, farmland within reach, defensibility, safety, minerals, centrality; white dots are the candidate cities, numbered best first',
+      lines: [
+        `Candidate cities by site score: ${world.cities.slice(0, 10).map((c, k) => `#${k + 1} ${c.score.toFixed(2)}`).join(', ')}${world.cities.length > 10 ? ` (${world.cities.length - 10} more on the map)` : ''}.`,
+        'The rank is the site score alone: the weighted sum of the eight terms (river 0.15, harbor 0.15, fresh water 0.15, farmland within reach 0.2, defensibility 0.05, safety 0.1, minerals within reach 0.1, centrality 0.1) times thermal comfort and air, each next city at least 500 km from the ones before. Habitability does not rank them; the explain drawer shows both for any city.',
+      ],
+    }),
     relief: 'light',
     rivers: true,
     cellColor: (world, i) => landRamp(world, i, CITY_RAMP, world.citySite[i]),

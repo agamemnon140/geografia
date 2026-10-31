@@ -167,6 +167,9 @@ export interface World {
   megafauna: Uint8Array;
   landmass: Int32Array;
   landmassAreas: number[];
+  /** Names of the eight lineages (M27: the compass sector of the supercontinent where each began; the seeding landmass on the real Earth) and, per lineage, the cell where the map writes its name (-1 where it dominates nowhere). */
+  lineageNames: string[];
+  realmLabelCells: number[];
   /** Civilization (M24, civilization/civilization.ts): habitability with its four terms (cell-major, HABITABILITY_TERMS order: food, water, comfort, air), agricultural potential, the city-site score with its eight terms (cell-major, CITY_TERMS order), the candidate cities ranked best first, the arrival of people in thousands of years (UNREACHED where none), the origin cell. */
   habitability: FloatArray;
   habitabilityTerms: FloatArray;
@@ -511,6 +514,8 @@ export function finalize(ctx: BuildContext, state: ReliefState, onProgress: Prog
     megafauna: fauna.megafauna,
     landmass: fauna.landmass,
     landmassAreas: fauna.landmassAreas,
+    lineageNames: fauna.names,
+    realmLabelCells: fauna.labelCells,
     habitability: civilization.habitability,
     habitabilityTerms: civilization.habitabilityTerms,
     agriculture: civilization.agriculture,

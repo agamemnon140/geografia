@@ -5,7 +5,6 @@ import type { World } from '../sim/pipeline.ts';
 import { MEGAFAUNA_GIANT_ARTHROPODS, MEGAFAUNA_HERBIVORES, MEGAFAUNA_PREDATORS, REALM_NONE, aerobicScope } from '../sim/biosphere/fauna.ts';
 import { SOIL_BASE, SOIL_WEIGHT, SUNSHINE_REFERENCE_H, SUNSHINE_WEIGHT, TROPICAL_FOREST_MM, VEGETATION_NAMES, carbonGrowthFactor, fireFactor, miamiNpp, oxygenGrowthFactor } from '../sim/biosphere/flora.ts';
 import { CEILING_M, CITY_TERMS, CITY_WEIGHTS, HABITABILITY_TERMS, PLATEAU_M, UNREACHED, hypoxiaShiftM, oxygenPartialPressure } from '../sim/civilization/civilization.ts';
-import { REALM_NAMES } from '../render/layers.ts';
 import { LINEAGE_COUNT } from '../sim/tectonics/crust.ts';
 import { MINERALS, MINERAL_COUNT, MINERAL_NAMES, oilPreservation } from '../sim/resources/minerals.ts';
 import { BOUNDARY_NAMES } from '../sim/tectonics/simulation.ts';
@@ -185,16 +184,16 @@ export function explainCell(world: World, cell: number, sample: number): Section
 
     // Fauna (M23): the lineages, where they came from, and what they support.
     const fauna: string[] = [];
-    const shares: string[] = [];
+    const realm = world.realm[cell];
+    const others: string[] = [];
     for (let k = 0; k < LINEAGE_COUNT; k++) {
       const v = world.lineage[cell * LINEAGE_COUNT + k];
-      if (v >= 0.05) shares.push(`${REALM_NAMES[k]} ${(100 * v).toFixed(0)}%`);
+      if (k !== realm && v >= 0.05) others.push(`${world.lineageNames[k]} ${(100 * v).toFixed(0)} %`);
     }
-    const realm = world.realm[cell];
     const mass = world.landmass[cell];
     const area = mass >= 0 ? world.landmassAreas[mass] : 0;
     fauna.push(
-      `realm       ${realm === REALM_NONE ? 'none' : REALM_NAMES[realm]}${shares.length ? ` (lineages: ${shares.join(', ')})` : ''}${world.reference ? '; by present connectivity, no history' : ''}`,
+      `realm       ${realm === REALM_NONE ? 'none' : `${world.lineageNames[realm]} lineage, ${(100 * world.lineage[cell * LINEAGE_COUNT + realm]).toFixed(0)} % of this fauna${world.reference ? ' (by present connectivity, no history)' : ', which began in that sector of the supercontinent'}`}${others.length ? `; also ${others.join(', ')}: faunas that mixed where their lands met` : ''}`,
       `endemism    ${world.endemism[cell].toFixed(2)}: share of this fauna found on no other landmass`,
       `richness    ${world.richness[cell].toFixed(2)} = growth term × landmass term (${area >= 1e6 ? `${(area / 1e6).toFixed(1)} million` : area.toFixed(0)} km²)`,
       `megafauna   ${world.megafauna[cell] & MEGAFAUNA_PREDATORS ? 'large herbivores and large predators' : world.megafauna[cell] & MEGAFAUNA_HERBIVORES ? 'large herbivores, no large predators (the landmass is too small)' : `none: too little growth or too small a landmass${aerobicScope(world.params.oxygen) < 1 ? ` (thin air: aerobic scope ${aerobicScope(world.params.oxygen).toFixed(2)})` : ''}`}${world.megafauna[cell] & MEGAFAUNA_GIANT_ARTHROPODS ? `; giant arthropods (oxygen ${(100 * world.params.oxygen).toFixed(0)} %)` : ''}`,
@@ -213,7 +212,7 @@ export function explainCell(world: World, cell: number, sample: number): Section
     );
     const rank = world.cities.findIndex((c) => c.cell === cell);
     const terms = CITY_TERMS.map((name, k) => `${name} ${world.cityTerms[cell * CITY_TERMS.length + k].toFixed(2)}×${CITY_WEIGHTS[k]}`).join(', ');
-    civ.push(`city site   ${world.citySite[cell].toFixed(2)}${rank >= 0 ? ` (candidate city #${rank + 1})` : ''} = (${terms}) × comfort × air`);
+    civ.push(`city site   ${world.citySite[cell].toFixed(2)}${rank >= 0 ? ` (candidate city #${rank + 1}; habitability ${world.habitability[cell].toFixed(2)}, which does not set the rank)` : ''} = (${terms}) × comfort × air`);
     const ka = world.arrivalKa[cell];
     civ.push(
       `people      ${cell === world.origin ? 'the origin of the dispersal' : ka === UNREACHED ? 'not reached within 100,000 years of the origin' : `arrive ${ka.toFixed(1)} thousand years after the origin`}`,

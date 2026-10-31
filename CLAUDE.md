@@ -21,7 +21,9 @@ every push to `main` of https://github.com/agamemnon140/geografia). Local:
   potatoes" (M12, M13); "nothing like Europe or Central America" (M14);
   "still not as dissected as Europe", with seed 282101170 as the reference
   (M17); "dozens of small peaks" on seed 4183608316 and too many rivers and
-  lakes in dry regions (M18). Requests also came mid-task; address them in
+  lakes in dry regions (M18); faunal realms looked like "firm, arbitrary
+  divisions" with color names that "mean nothing" (M27); the city ranking
+  was not explained (M27). Requests also came mid-task; address them in
   order and keep each milestone whole.
 - Several requests arrive at once; finish each in full, say what was left
   out and why.
@@ -122,6 +124,17 @@ every push to `main` of https://github.com/agamemnon140/geografia). Local:
   `air` in `civilization.ts`, `HABITABILITY_TERMS`, stride 4); the climate is
   untouched; presets Oxygen-rich, Low oxygen, Iron world;
   `scripts/diag-composition.ts [seed] [coarser]`; `tests/composition.test.ts`.
+- M27: legible faunal realms (owner: "firm, arbitrary divisions", "color
+  names mean nothing") and the city ranking explained. Lineage mixing retuned
+  in `mixLineages`: regions of continuous easy ground move a quarter toward
+  their mean per fluvial pass, diffusion `LINEAGE_SWEEPS` half-steps,
+  barriers (desert, > 2,500 m, < -10 C) at a twentieth; sectors seeded by
+  compass (`LINEAGE_SECTOR_NAMES`); `World.lineageNames`, `realmLabelCells`
+  (fauna.ts `lineageNames`, `realmLabelCells`); blended `realmColor`; realm
+  names on the map (`Layer.labels`); `Layer.legendFor` and `Legend.lines`
+  (`renderLegend(layer, box, world)`); stats `realmShares`,
+  `realmMainLandmass`; the City sites legend lists the scores and the rule;
+  habitability shown beside a city's site score.
 
 ## Where things are
 
@@ -147,7 +160,7 @@ every push to `main` of https://github.com/agamemnon140/geografia). Local:
   `render-globe.ts`, `diag-tectonics.ts`, `diag-climate.ts [Real]`,
   `diag-resources.ts [preset] [seed]`, `diag-composition.ts [seed] [coarser]`, `convert-etopo5.ts`,
   `convert-paleodem.ts`, `convert-mrds.ts <mrds.csv>`, `make-icons.ts`.
-- `tests/`: 25 files, 142 tests; CI budget for the full build is 60 s.
+- `tests/`: 25 files, 144 tests; CI budget for the full build is 60 s.
   `tests/minerals.test.ts` pins seed 2's ocean fraction, mean land
   elevation, mean temperature and sea level to the M20 values: anything
   that changes the geography fails it on purpose.

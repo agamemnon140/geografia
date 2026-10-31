@@ -1,10 +1,11 @@
 import { ramp } from './colors.ts';
 import type { Layer } from './layers.ts';
+import type { World } from '../sim/pipeline.ts';
 
-/** Render a layer's legend into a container: a gradient bar with ticks, color swatches, or plain lines. */
-export function renderLegend(layer: Layer, container: HTMLElement): void {
+/** Render a layer's legend into a container: a gradient bar with ticks, color swatches, or plain lines; with a world, the legend for that world when the layer has one (M27). */
+export function renderLegend(layer: Layer, container: HTMLElement, world: World | null = null): void {
   container.innerHTML = '';
-  const legend = layer.legend;
+  const legend = layer.legendFor && world ? layer.legendFor(world) : layer.legend;
   if (!legend) return;
   if (legend.kind === 'ramp') {
     const canvas = document.createElement('canvas');
@@ -59,6 +60,14 @@ export function renderLegend(layer: Layer, container: HTMLElement): void {
     for (const line of legend.items) {
       const row = document.createElement('div');
       row.className = 'legend-row';
+      row.textContent = line;
+      container.append(row);
+    }
+  }
+  if (legend.kind !== 'text' && legend.lines) {
+    for (const line of legend.lines) {
+      const row = document.createElement('div');
+      row.className = 'legend-unit';
       row.textContent = line;
       container.append(row);
     }

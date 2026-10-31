@@ -51,6 +51,26 @@ describe('fauna (M23)', () => {
     expect(world.stats.meanEndemism).toBeGreaterThan(0);
   });
 
+  it('names the lineages by their seeding sector and writes each realm name inside it (M27)', () => {
+    expect(new Set(world.lineageNames).size).toBe(LINEAGE_COUNT);
+    expect(world.lineageNames).toContain('northern');
+    expect(world.realmLabelCells.length).toBe(LINEAGE_COUNT);
+    let placed = 0;
+    world.realmLabelCells.forEach((cell, k) => {
+      if (cell < 0) return;
+      placed++;
+      expect(world.elevation[cell]).toBeGreaterThanOrEqual(world.seaLevel);
+      expect(world.realm[cell]).toBe(k);
+    });
+    expect(placed).toBeGreaterThanOrEqual(world.stats.realmCount);
+    const shares = world.stats.realmShares.reduce((a, b) => a + b, 0);
+    expect(shares).toBeGreaterThan(0.9);
+    expect(shares).toBeLessThanOrEqual(1.0001);
+    world.stats.realmShares.forEach((s, k) => {
+      if (s > 0) expect(world.stats.realmMainLandmass[k]).toBeGreaterThanOrEqual(0);
+    });
+  });
+
   it('keeps separated landmasses more endemic than the largest one', () => {
     const areas = world.landmassAreas;
     let largest = 0;

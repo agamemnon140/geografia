@@ -119,6 +119,10 @@ describe('the real Earth reference', () => {
     expect(earth.realm[cellAt(-25, 135)]).not.toBe(earth.realm[cellAt(50, 10)]);
     expect(earth.realm[cellAt(-80, 90)]).not.toBe(earth.realm[cellAt(-25, 135)]);
     expect(earth.stats.meanEndemism).toBeGreaterThan(0.9);
+    // Named by the landmass that seeds them (M27): the largest first.
+    expect(earth.lineageNames[0]).toMatch(/^largest landmass/);
+    expect(earth.lineageNames[1]).toMatch(/^2nd largest landmass/);
+    expect(earth.realmLabelCells[0]).toBeGreaterThanOrEqual(0);
   });
 
   it('finds the cradles of antiquity among the candidate cities and reaches every continent but Antarctica (M24)', () => {

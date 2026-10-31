@@ -35,10 +35,12 @@ import {
   HOTSPOT_RATE_KM,
   ISOSTASY_M_PER_KM,
   LINEAGE_BARRIER,
+  LINEAGE_COLD_C,
   LINEAGE_COUNT,
   LINEAGE_DESERT_MM,
   LINEAGE_DIFFUSION,
-  LINEAGE_LANDMASS_MIXING,
+  LINEAGE_REGION_MIXING,
+  LINEAGE_SWEEPS,
   LINEAGE_MOUNTAIN_M,
   MARGIN_EVENT_LOCK_STEPS,
   MAX_PLATES,
@@ -1810,8 +1812,9 @@ export class TectonicsSim {
 
   /**
    * Eight ancestral faunas (M23): every continental parcel gets the lineage
-   * of its angular sector around the supercontinent's centroid, so the
-   * later splits carry distinct faunas apart. Runs in the constructor, where
+   * of its compass sector around the supercontinent's centroid (0 north, 1
+   * north-east, ... 7 north-west, LINEAGE_SECTOR_NAMES), so the later splits
+   * carry distinct faunas apart. Runs in the constructor, where
    * parcel i sits on cell i.
    */
   private seedLineages(isContinental: ArrayLike<number | boolean>): void {
@@ -1831,16 +1834,11 @@ export class TectonicsSim {
     cx /= norm;
     cy /= norm;
     cz /= norm;
-    // A tangent frame at the centroid: e1 = a x c for a helper axis a not parallel to c, e2 = c x e1.
-    const ax = Math.abs(cx) < 0.9 ? 1 : 0;
-    const ay = 1 - ax;
-    let e1x = ay * cz;
-    let e1y = -ax * cz;
-    let e1z = ax * cy - ay * cx;
-    const e1n = Math.hypot(e1x, e1y, e1z) || 1;
-    e1x /= e1n;
-    e1y /= e1n;
-    e1z /= e1n;
+    // A compass frame at the centroid (M27): e1 points east (the pole axis crossed with the centroid), e2 north; at a pole any frame serves.
+    const horizontal = Math.hypot(cx, cy);
+    const e1x = horizontal > 1e-9 ? -cy / horizontal : 1;
+    const e1y = horizontal > 1e-9 ? cx / horizontal : 0;
+    const e1z = 0;
     const e2x = cy * e1z - cz * e1y;
     const e2y = cz * e1x - cx * e1z;
     const e2z = cx * e1y - cy * e1x;
@@ -1849,8 +1847,10 @@ export class TectonicsSim {
       const px = xyz[3 * i];
       const py = xyz[3 * i + 1];
       const pz = xyz[3 * i + 2];
-      const angle = Math.atan2(px * e2x + py * e2y + pz * e2z, px * e1x + py * e1y + pz * e1z);
-      const sector = Math.min(LINEAGE_COUNT - 1, Math.floor(((angle + Math.PI) / (2 * Math.PI)) * LINEAGE_COUNT));
+      // Bearing from the centroid, clockwise from north; sector 0 is centered on north.
+      const bearing = Math.atan2(px * e1x + py * e1y + pz * e1z, px * e2x + py * e2y + pz * e2z);
+      const turn = (bearing + Math.PI / LINEAGE_COUNT + 2 * Math.PI) % (2 * Math.PI);
+      const sector = Math.min(LINEAGE_COUNT - 1, Math.floor((turn / (2 * Math.PI)) * LINEAGE_COUNT));
       pool.lineage[i * LINEAGE_COUNT + sector] = 1;
     }
   }
@@ -1879,6 +1879,7 @@ export class TectonicsSim {
 
   private lineageStamp = new Int32Array(0);
   private lineageQueue = new Int32Array(0);
+  private lineageBarrier = new Uint8Array(0);
   private lineageNext = new Float32Array(0);
 
   /**
@@ -1888,6 +1889,18 @@ export class TectonicsSim {
    * mean, slower across deserts and high ground; nothing crosses the sea,
    * and crust that just became land takes its landmass's fauna. Pure
    * bookkeeping: nothing here touches the relief.
+   */
+  /**
+   * Faunal lineages mix along the land at every fluvial pass (M23; retuned
+   * in M27). Regions of continuous easy land (neither desert, high ground nor
+   * polar ground) each move toward their own mean fauna at
+   * LINEAGE_REGION_MIXING per pass: a fauna crosses a continent of uniform
+   * habitat within a few tens of steps, as real interchanges did. Local
+   * diffusion then runs LINEAGE_SWEEPS half-steps toward the land neighbors'
+   * mean, at LINEAGE_BARRIER of the rate in barrier cells, so deserts,
+   * mountain belts and polar ground leak faunas slowly and stay the
+   * boundaries between realms. Nothing crosses the sea. Fresh land takes its
+   * region's mean, or its neighbors'.
    */
   private mixLineages(): void {
     const grid = this.grid;
@@ -1900,85 +1913,109 @@ export class TectonicsSim {
     if (this.lineageStamp.length < n) {
       this.lineageStamp = new Int32Array(n);
       this.lineageQueue = new Int32Array(n);
+      this.lineageBarrier = new Uint8Array(n);
     }
     if (this.lineageNext.length < L * n) this.lineageNext = new Float32Array(L * n);
     const stamp = this.lineageStamp;
     const queue = this.lineageQueue;
+    const barrier = this.lineageBarrier;
     const next = this.lineageNext;
     const precip = this.externalPrecipitation ?? this.hydrology.precipitation;
-    const mean = new Float64Array(L);
-    const nbMean = new Float64Array(L);
+    const temperature = this.externalTemperature;
+    // The barrier cells of the land: dry, high or cold ground.
+    for (let i = 0; i < n; i++) {
+      const land = elevation[i] >= sea;
+      const cold = temperature !== null && temperature[i] < LINEAGE_COLD_C;
+      barrier[i] = land && (precip[i] < LINEAGE_DESERT_MM || elevation[i] - sea > LINEAGE_MOUNTAIN_M || cold) ? 1 : 0;
+    }
+    // Regions of continuous easy land, by flood fill.
     stamp.fill(-1);
-    let id = 0;
+    let regions = 0;
     for (let s = 0; s < n; s++) {
-      if (stamp[s] >= 0 || elevation[s] < sea) continue;
-      // Flood fill the landmass; its cells are queue[0 .. tail).
+      if (stamp[s] >= 0 || elevation[s] < sea || barrier[s]) continue;
       let head = 0;
       let tail = 0;
       queue[tail++] = s;
-      stamp[s] = id;
-      mean.fill(0);
-      let weight = 0;
+      stamp[s] = regions;
       while (head < tail) {
         const i = queue[head++];
-        const base = claim[i] * L;
-        let sum = 0;
-        for (let k = 0; k < L; k++) sum += pool.lineage[base + k];
-        if (sum > 0) {
-          const a = this.areaKm2[i];
-          for (let k = 0; k < L; k++) mean[k] += (a * pool.lineage[base + k]) / sum;
-          weight += a;
-        }
         for (let t = grid.nbStart[i]; t < grid.nbStart[i + 1]; t++) {
           const j = grid.nb[t];
-          if (stamp[j] < 0 && elevation[j] >= sea) {
-            stamp[j] = id;
+          if (stamp[j] < 0 && elevation[j] >= sea && !barrier[j]) {
+            stamp[j] = regions;
             queue[tail++] = j;
           }
         }
       }
-      if (weight > 0) {
-        for (let k = 0; k < L; k++) mean[k] /= weight;
-        // New vectors from the old ones, so the order of cells does not matter.
-        for (let q = 0; q < tail; q++) {
-          const i = queue[q];
-          const base = claim[i] * L;
-          let sum = 0;
-          for (let k = 0; k < L; k++) sum += pool.lineage[base + k];
-          if (sum <= 0) {
-            for (let k = 0; k < L; k++) next[i * L + k] = mean[k];
-            continue;
-          }
-          nbMean.fill(0);
-          let count = 0;
-          for (let t = grid.nbStart[i]; t < grid.nbStart[i + 1]; t++) {
-            const j = grid.nb[t];
-            if (elevation[j] < sea) continue;
-            const jb = claim[j] * L;
-            let js = 0;
-            for (let k = 0; k < L; k++) js += pool.lineage[jb + k];
-            if (js <= 0) continue;
-            for (let k = 0; k < L; k++) nbMean[k] += pool.lineage[jb + k] / js;
-            count++;
-          }
-          let barrier = 1;
-          if (precip[i] < LINEAGE_DESERT_MM) barrier *= LINEAGE_BARRIER;
-          if (elevation[i] - sea > LINEAGE_MOUNTAIN_M) barrier *= LINEAGE_BARRIER;
-          const d = count > 0 ? LINEAGE_DIFFUSION * barrier : 0;
-          const m = LINEAGE_LANDMASS_MIXING * barrier;
-          for (let k = 0; k < L; k++) {
-            const v = pool.lineage[base + k] / sum;
-            const local = count > 0 ? nbMean[k] / count : v;
-            next[i * L + k] = v + d * (local - v) + m * (mean[k] - v);
-          }
+      regions++;
+    }
+    // The area-weighted mean fauna of each region, then the regional exchange toward it.
+    const mean = new Float64Array(L * regions);
+    const weight = new Float64Array(regions);
+    for (let i = 0; i < n; i++) {
+      const r = stamp[i];
+      if (r < 0) continue;
+      const base = claim[i] * L;
+      let sum = 0;
+      for (let k = 0; k < L; k++) sum += pool.lineage[base + k];
+      if (sum <= 0) continue;
+      const a = this.areaKm2[i];
+      for (let k = 0; k < L; k++) mean[r * L + k] += (a * pool.lineage[base + k]) / sum;
+      weight[r] += a;
+    }
+    for (let r = 0; r < regions; r++) if (weight[r] > 0) for (let k = 0; k < L; k++) mean[r * L + k] /= weight[r];
+    for (let i = 0; i < n; i++) {
+      const r = stamp[i];
+      if (r < 0 || weight[r] <= 0) continue;
+      const base = claim[i] * L;
+      let sum = 0;
+      for (let k = 0; k < L; k++) sum += pool.lineage[base + k];
+      if (sum <= 0) {
+        for (let k = 0; k < L; k++) pool.lineage[base + k] = mean[r * L + k];
+        continue;
+      }
+      for (let k = 0; k < L; k++) {
+        const v = pool.lineage[base + k] / sum;
+        pool.lineage[base + k] = v + LINEAGE_REGION_MIXING * (mean[r * L + k] - v);
+      }
+    }
+    // Local diffusion along the land, slow through the barriers, never across the sea.
+    const nbMean = new Float64Array(L);
+    for (let sweep = 0; sweep < LINEAGE_SWEEPS; sweep++) {
+      for (let i = 0; i < n; i++) {
+        if (elevation[i] < sea) continue;
+        const base = claim[i] * L;
+        let sum = 0;
+        for (let k = 0; k < L; k++) sum += pool.lineage[base + k];
+        nbMean.fill(0);
+        let count = 0;
+        for (let t = grid.nbStart[i]; t < grid.nbStart[i + 1]; t++) {
+          const j = grid.nb[t];
+          if (elevation[j] < sea) continue;
+          const jb = claim[j] * L;
+          let js = 0;
+          for (let k = 0; k < L; k++) js += pool.lineage[jb + k];
+          if (js <= 0) continue;
+          for (let k = 0; k < L; k++) nbMean[k] += pool.lineage[jb + k] / js;
+          count++;
         }
-        for (let q = 0; q < tail; q++) {
-          const i = queue[q];
-          const base = claim[i] * L;
-          for (let k = 0; k < L; k++) pool.lineage[base + k] = next[i * L + k];
+        if (sum <= 0) {
+          // Fresh barrier land (a new peak, a dry coast) takes its neighbors' fauna, or waits for the final waif dispersal.
+          for (let k = 0; k < L; k++) next[i * L + k] = count > 0 ? nbMean[k] / count : 0;
+          continue;
+        }
+        const d = count > 0 ? LINEAGE_DIFFUSION * (barrier[i] ? LINEAGE_BARRIER : 1) : 0;
+        for (let k = 0; k < L; k++) {
+          const v = pool.lineage[base + k] / sum;
+          const local = count > 0 ? nbMean[k] / count : v;
+          next[i * L + k] = v + d * (local - v);
         }
       }
-      id++;
+      for (let i = 0; i < n; i++) {
+        if (elevation[i] < sea) continue;
+        const base = claim[i] * L;
+        for (let k = 0; k < L; k++) pool.lineage[base + k] = next[i * L + k];
+      }
     }
   }
 

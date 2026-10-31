@@ -219,19 +219,26 @@ export const DELTA_COAL_SHARE = 0.5;
 export const EVAPORITE_KM_PER_STEP = 0.01;
 
 /**
- * Fauna lineages (M23). Every land parcel carries a vector over
- * LINEAGE_COUNT ancestral faunas, seeded by angular sector around the
- * supercontinent; at each fluvial pass the vector moves halfway to its land
- * neighbors' mean (diffusion along the land, about 700 km over a 200-step
- * history: a toy for dispersal, which keeps a continent's regions distinct)
- * and 1% toward its landmass's mean (long-range exchange); deserts and
- * ground above 2,500 m pass faunas at a third of the rate; nothing crosses
- * the sea. There is no speciation: isolation preserves a fauna, it does not
- * create one.
+ * Fauna lineages (M23; the mixing retuned in M27). Every land parcel
+ * carries a vector over LINEAGE_COUNT ancestral faunas, seeded by compass
+ * sector around the supercontinent's centroid (0 north, 1 north-east, ...
+ * 7 north-west). At each fluvial pass, every region of continuous easy land
+ * (neither desert, high ground nor polar ground) moves a quarter of the way
+ * toward its own mean fauna, so a continent of uniform habitat shares one
+ * fauna within a few tens of steps, as real interchanges do; then the
+ * vector diffuses LINEAGE_SWEEPS half-steps toward its land neighbors'
+ * mean, at a twentieth of the rate in barrier cells, so deserts, mountain
+ * belts and polar ground leak faunas slowly and stay the boundaries between
+ * realms; nothing crosses the sea. There is no speciation: isolation
+ * preserves a fauna, it does not create one.
  */
 export const LINEAGE_COUNT = 8;
 export const LINEAGE_DIFFUSION = 0.5;
-export const LINEAGE_LANDMASS_MIXING = 0.01;
-export const LINEAGE_BARRIER = 0.3;
+export const LINEAGE_SWEEPS = 6;
+export const LINEAGE_REGION_MIXING = 0.25;
+export const LINEAGE_BARRIER = 0.05;
 export const LINEAGE_DESERT_MM = 250;
 export const LINEAGE_MOUNTAIN_M = 2500;
+export const LINEAGE_COLD_C = -10;
+/** Compass names of the eight seeding sectors, in lineage order. */
+export const LINEAGE_SECTOR_NAMES = ['northern', 'north-eastern', 'eastern', 'south-eastern', 'southern', 'south-western', 'western', 'north-western'] as const;
