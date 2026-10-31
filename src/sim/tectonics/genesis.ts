@@ -53,12 +53,12 @@ export const AULACOGEN_WIDTH_CELLS: [number, number] = [1, 2.2];
 /** Crust thickness on the axis of the failed arm (a flooded trough) and at its edge. */
 export const AULACOGEN_THICKNESS_KM: [number, number] = [19, 30];
 /** Passive (rifted) margins: thickness one to five cells from the young ocean, slope and shelf, all flooded (Earth floods 11% of its surface this way: Siberian, Sunda and Patagonian shelves). */
-export const MARGIN_PASSIVE_KM = [16, 20, 24, 27, 30];
+export const MARGIN_PASSIVE_KM = [16, 20, 24, 27, 30, 33];
 /** Shields and basins: amplitude (km) and frequency of a low-frequency variation of the interior thickness; the deepest basins flood into inland seas (Hudson Bay, the Baltic). */
-export const BASIN_AMPLITUDE_KM = 4;
+export const BASIN_AMPLITUDE_KM = 5;
 export const BASIN_FREQUENCY = 1.2;
 /** Active margins facing the old ocean are narrower: three cells. */
-export const MARGIN_ACTIVE_KM = [22, 27, 31];
+export const MARGIN_ACTIVE_KM = [22, 27, 31, 33];
 /** Oceanic cells within this many hops of continental crust ride with the continent (the subduction zone sits offshore). */
 export const STRIP_CELLS: [number, number] = [1, 3];
 /** Free (oceanic) seeds keep this many hops from continental crust and this angle from each other. */

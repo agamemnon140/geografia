@@ -124,6 +124,8 @@ export const RIFT_POLE_MARGIN = 0.17;
 export const SLAB_PULL_RATE = 0.03;
 export const SLAB_PULL_SPEED_CELLS = 0.35;
 export const SLAB_PULL_SATURATION_CELLS = 30;
+/** Slab break-off (M17): a plate colliding on at least this many continental cells this step has lost its slab and feels no pull; the collision brake then stops it with the seas it had not closed still open (the Mediterranean). */
+export const SLAB_BREAKOFF_CELLS = 3;
 /**
  * Back-arc opening by slab rollback (DESIGN 3.3, M14). Old, dense sea floor
  * sinks steeply and its trench retreats; the overriding plate's arc and

@@ -57,6 +57,7 @@ import {
   SLIVER_MIN_LENGTH,
   SLIVER_PROBABILITY,
   SLIVER_WIDTH,
+  SLAB_BREAKOFF_CELLS,
   SLAB_PULL_RATE,
   SLAB_PULL_SATURATION_CELLS,
   SLAB_PULL_SPEED_CELLS,
@@ -337,6 +338,8 @@ export class TectonicsSim {
     }
     for (let p = 0; p < count; p++) {
       if (cells[p] === 0 || this.dead[p]) continue;
+      // Slab break-off: a continent in the trench detaches the slab; the pull is gone.
+      if (this.collisionCells[p] >= SLAB_BREAKOFF_CELLS) continue;
       const len = Math.hypot(sum[3 * p], sum[3 * p + 1], sum[3 * p + 2]);
       if (len < 1e-12) continue;
       const speed = SLAB_PULL_SPEED_CELLS * this.cellAngle * this.speed * Math.min(1, cells[p] / SLAB_PULL_SATURATION_CELLS);
@@ -520,7 +523,10 @@ export class TectonicsSim {
       cy += xyz[3 * j + 1];
       cz += xyz[3 * j + 2];
     }
-    // The arc moves from its centroid toward the trench's centroid: omega = c cross n carries c along n.
+    // The arc swings like a door hinged at one end of the trench (M17): its far end moves toward
+    // the trench and a triangular marginal sea opens behind it, leaving a peninsula attached at the
+    // hinge (Italy and the Tyrrhenian, Japan and its sea). Rotation about the hinge point h at a
+    // rate set so the far end moves at the rollback speed, signed so the arc moves outward.
     let tx = 0;
     let ty = 0;
     let tz = 0;
@@ -530,15 +536,58 @@ export class TectonicsSim {
       tz += xyz[3 * j + 2];
     }
     const c = normalize3(cx, cy, cz);
-    const along = tx * c[0] + ty * c[1] + tz * c[2];
-    const nx = tx - along * c[0];
-    const ny = ty - along * c[1];
-    const nz = tz - along * c[2];
+    const t = normalize3(tx, ty, tz);
+    // Trench direction: the axis of greatest spread of the trench cells; the hinge is one of its ends.
+    let ax = 0;
+    let ay = 0;
+    let az = 0;
+    for (const j of trench) {
+      const dx = xyz[3 * j] - t[0];
+      const dy = xyz[3 * j + 1] - t[1];
+      const dz = xyz[3 * j + 2] - t[2];
+      const sgn = ax * dx + ay * dy + az * dz >= 0 ? 1 : -1;
+      ax += sgn * dx;
+      ay += sgn * dy;
+      az += sgn * dz;
+    }
+    let hinge = trench[0];
+    let far = trench[0];
+    let lo = Infinity;
+    let hi = -Infinity;
+    for (const j of trench) {
+      const s = xyz[3 * j] * ax + xyz[3 * j + 1] * ay + xyz[3 * j + 2] * az;
+      if (s < lo) {
+        lo = s;
+        hinge = j;
+      }
+      if (s > hi) {
+        hi = s;
+        far = j;
+      }
+    }
+    if (this.eventRng.float() < 0.5) [hinge, far] = [far, hinge];
+    const h: [number, number, number] = [xyz[3 * hinge], xyz[3 * hinge + 1], xyz[3 * hinge + 2]];
+    const f: [number, number, number] = [xyz[3 * far], xyz[3 * far + 1], xyz[3 * far + 2]];
+    // Outward: from the arc's centroid toward the trench, tangent at the far end.
+    let nx = t[0] - c[0];
+    let ny = t[1] - c[1];
+    let nz = t[2] - c[2];
+    const nf = nx * f[0] + ny * f[1] + nz * f[2];
+    nx -= nf * f[0];
+    ny -= nf * f[1];
+    nz -= nf * f[2];
     const nlen = Math.hypot(nx, ny, nz);
-    if (nlen > 1e-9) {
-      const rate = (this.cellAngle * this.speed * this.eventRng.range(ROLLBACK_RATE_CELLS[0], ROLLBACK_RATE_CELLS[1])) / nlen;
+    const sinHF = Math.hypot(h[1] * f[2] - h[2] * f[1], h[2] * f[0] - h[0] * f[2], h[0] * f[1] - h[1] * f[0]);
+    if (nlen > 1e-9 && sinHF > 1e-6) {
+      const speed = this.cellAngle * this.speed * this.eventRng.range(ROLLBACK_RATE_CELLS[0], ROLLBACK_RATE_CELLS[1]);
+      let rate = speed / sinHF;
+      // Velocity of the far end under omega = rate * h is rate * (h x f); flip if it points inward.
+      const vx = h[1] * f[2] - h[2] * f[1];
+      const vy = h[2] * f[0] - h[0] * f[2];
+      const vz = h[0] * f[1] - h[1] * f[0];
+      if (vx * nx + vy * ny + vz * nz < 0) rate = -rate;
       const [ex, ey, ez] = eulerVector(parent);
-      setEulerVector(this.plates[id], ex + rate * (c[1] * nz - c[2] * ny), ey + rate * (c[2] * nx - c[0] * nz), ez + rate * (c[0] * ny - c[1] * nx));
+      setEulerVector(this.plates[id], ex + rate * h[0], ey + rate * h[1], ez + rate * h[2]);
     }
     this.lastMarginEvent[p] = this.step;
     this.events.push({ step: this.step, type: 'rollback', plate: id, other: p });
@@ -1567,28 +1616,41 @@ export class TectonicsSim {
     }
   }
 
-  /** Settle eroded material on a cell, spilling to its neighbors once the basin is full; the rest is lost to the deep ocean. */
+  /**
+   * Settle eroded material where a river ends. A delta fills its water body
+   * up to the water surface and no higher (M17: before, a full cell spilled
+   * onto all its neighbors and closed basins grew rings of sediment hills);
+   * what does not fit moves to the lowest flooded neighbor, and the rest is
+   * lost to the deep.
+   */
   private deposit(j: number, dk: number): void {
     const pool = this.pool;
     const claim = this.wParcel;
-    let rest = dk;
-    const i = claim[j];
-    const room = SEDIMENT_CAP_KM - pool.sediment[i];
-    if (room > 0) {
-      const put = room < rest ? room : rest;
-      pool.sediment[i] += put;
-      rest -= put;
-    }
-    if (rest <= 0) return;
     const grid = this.grid;
-    for (let t = grid.nbStart[j]; t < grid.nbStart[j + 1] && rest > 0; t++) {
-      const b = claim[grid.nb[t]];
-      const r = SEDIMENT_CAP_KM - pool.sediment[b];
-      if (r <= 0) continue;
-      const put = r < rest ? r : rest;
-      pool.sediment[b] += put;
-      rest -= put;
+    const hydro = this.hydrology;
+    const elevation = this.elevation;
+    const surface = (cell: number): number => (hydro.lake[cell] >= 0 ? hydro.waterLevel[cell] : this.seaLevel);
+    const fill = (cell: number, amount: number): number => {
+      const i = claim[cell];
+      const room = Math.min(SEDIMENT_CAP_KM - pool.sediment[i], (surface(cell) - elevation[cell]) / SEDIMENT_M_PER_KM);
+      if (room <= 0) return 0;
+      const put = room < amount ? room : amount;
+      pool.sediment[i] += put;
+      elevation[cell] += put * SEDIMENT_M_PER_KM;
+      return put;
+    };
+    let rest = dk - fill(j, dk);
+    if (rest <= 1e-9) return;
+    let lowest = -1;
+    let low = Infinity;
+    for (let t = grid.nbStart[j]; t < grid.nbStart[j + 1]; t++) {
+      const nb = grid.nb[t];
+      if (elevation[nb] < low && elevation[nb] < surface(nb)) {
+        low = elevation[nb];
+        lowest = nb;
+      }
     }
+    if (lowest >= 0) rest -= fill(lowest, rest);
   }
 
   /**

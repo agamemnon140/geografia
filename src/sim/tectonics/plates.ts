@@ -12,6 +12,13 @@ export interface Plate {
   rotation: Mat3;
 }
 
+/**
+ * Share of the gap to the typical speed closed at each pole walk. Slab pull now drives plates
+ * (M13), so this stands only for the mantle's slow drag: a plate braked by a collision whose
+ * slab broke off stays slow for a hundred steps or more, and the seas it had not yet closed survive.
+ */
+export const SPEED_RELAXATION = 0.03;
+
 /** Random unit vector, uniform on the sphere. */
 export function randomUnit(rng: Rng): [number, number, number] {
   const z = rng.range(-1, 1);
@@ -42,7 +49,7 @@ export function perturbPlates(plates: Plate[], rng: Rng, cellAngle: number, spee
     // Relaxation toward the typical speed stands for slab pull from subduction elsewhere; it has to
     // beat the collision brake except along long sutures, or every plate ends up locked.
     const walked = p.rate * rng.range(0.85, 1.15);
-    const relaxed = walked + 0.1 * (typical - walked);
+    const relaxed = walked + SPEED_RELAXATION * (typical - walked);
     p.rate = Math.min(cellAngle * 0.45 * speed, Math.max(cellAngle * 0.05, relaxed));
   }
 }
