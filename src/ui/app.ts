@@ -9,6 +9,7 @@ import { ANNUAL, SAMPLES } from '../sim/climate/insolation.ts';
 import { Grid } from '../sim/grid/grid.ts';
 import { CURRENT_MILESTONE, EARTH, PARAM_SPECS, PRESETS, type PlanetParams } from '../sim/params.ts';
 import type { World } from '../sim/pipeline.ts';
+import { VEG_BOREAL, VEG_DESERT, VEG_MEDITERRANEAN, VEG_RAINFOREST, VEG_SAVANNA, VEG_SCRUB, VEG_SEASONAL, VEG_STEPPE, VEG_TEMPERATE, VEG_TEMPERATE_RAIN } from '../sim/biosphere/flora.ts';
 import { MINERALS, MINERAL_NAMES } from '../sim/resources/minerals.ts';
 import type { WorldStats } from '../sim/stats.ts';
 import { SimClient } from '../worker/client.ts';
@@ -220,11 +221,15 @@ export function mountApp(root: HTMLElement): void {
   const linkHash = (p: PlanetParams): string => paramsToHash(p) + (beyond ? '&beyond=1' : '');
   /** The layer on screen: the one beyond geography when chosen, else the geography one. */
   const activeLayerId = (): string => (beyond && layerBeyond.value ? layerBeyond.value : layerSelect.value);
+  const forestShare = (v: number[]): number => v[VEG_BOREAL] + v[VEG_TEMPERATE] + v[VEG_TEMPERATE_RAIN] + v[VEG_MEDITERRANEAN] + v[VEG_SEASONAL] + v[VEG_RAINFOREST];
+  const grassShare = (v: number[]): number => v[VEG_STEPPE] + v[VEG_SAVANNA];
+  const dryShare = (v: number[]): number => v[VEG_SCRUB] + v[VEG_DESERT];
   /** Rows shown only beyond geography. */
   const beyondRows = (w: World): [string, string][] => [
     ['Deposits', w.reference && w.stats.depositCounts.every((c) => c === 0)
       ? 'not available for the measured relief (no tectonic history, no shipped data)'
       : MINERALS.map((m, k) => `${MINERAL_NAMES[m]} ${w.stats.depositCounts[k]}`).join(', ')],
+    ['Primary production', `${w.stats.landNppGtC.toFixed(0)} Gt C/yr on land; forest ${pct(forestShare(w.stats.vegetationShares), 0)}, grassland ${pct(grassShare(w.stats.vegetationShares), 0)}, desert and scrub ${pct(dryShare(w.stats.vegetationShares), 0)}`],
   ];
   const statRows = (w: World): [string, string][] => {
     const s: WorldStats = w.stats;

@@ -152,6 +152,7 @@ export function earthContext(): BuildContext {
     areaKm2,
     hydro: new Hydrology(grid, areaKm2, params.radiusKm),
     seaLevelOverride: 0,
+    noHistory: true,
   };
 }
 
@@ -197,7 +198,7 @@ export function buildEarth(elevation: EarthElevation, onProgress: Progress = () 
   const state = earthReliefState(context.grid, elevation);
   state.step = EARTH.tectonicAge;
   // The measured deposits belong to the present only: the reconstructions of the past get none.
-  const world = finalize({ ...context, measuredDeposits: deposits ?? new Uint8Array(context.grid.n) }, state, onProgress);
+  const world = finalize(deposits ? { ...context, measuredDeposits: deposits } : context, state, onProgress);
   world.reference = 'ETOPO5';
   onProgress('done', 1);
   return world;

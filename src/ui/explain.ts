@@ -2,6 +2,7 @@ import { cloudAt, koppenName, precipitationAt, temperatureAt, windAt, type Layer
 import { ANNUAL, SAMPLES } from '../sim/climate/insolation.ts';
 import { Grid, cellAreasKm2 } from '../sim/grid/grid.ts';
 import type { World } from '../sim/pipeline.ts';
+import { SOIL_BASE, SOIL_WEIGHT, SUNSHINE_REFERENCE_H, SUNSHINE_WEIGHT, VEGETATION_NAMES, miamiNpp } from '../sim/biosphere/flora.ts';
 import { MINERALS, MINERAL_COUNT, MINERAL_NAMES } from '../sim/resources/minerals.ts';
 import { BOUNDARY_NAMES } from '../sim/tectonics/simulation.ts';
 
@@ -159,6 +160,23 @@ export function explainCell(world: World, cell: number, sample: number): Section
     );
   }
   sections.push({ title: 'Resources', lines: resources, group: 'resources' });
+
+  // Flora (M22): productivity itemized, the soil's terms, the vegetation class.
+  if (land) {
+    const flora: string[] = [];
+    if (world.iceSheet[cell]) flora.push('ice sheet: no soil, no growth');
+    else {
+      const base = miamiNpp(t, p);
+      const sunFactor = 1 + SUNSHINE_WEIGHT * Math.max(-1, Math.min(1, (sun - SUNSHINE_REFERENCE_H) / SUNSHINE_REFERENCE_H));
+      const soilFactor = 1 - SOIL_WEIGHT / 2 + SOIL_WEIGHT * world.soil[cell];
+      flora.push(
+        `growth      ${world.npp[cell].toFixed(0)} g C/m²/yr = Miami ${base.toFixed(0)} (the lesser of warmth and rain) × sun ${sunFactor.toFixed(2)} × soil ${soilFactor.toFixed(2)}`,
+        `soil        ${world.soil[cell].toFixed(2)} = base ${SOIL_BASE} + ash ${world.soilAsh[cell].toFixed(2)} + alluvium ${world.soilAlluvium[cell].toFixed(2)} − losses ${world.soilLoss[cell].toFixed(2)} (leaching, old shield, cold)`,
+        `vegetation  ${VEGETATION_NAMES[world.vegetation[cell]]}`,
+      );
+    }
+    sections.push({ title: 'Flora', lines: flora, group: 'life' });
+  }
 
   return sections;
 }

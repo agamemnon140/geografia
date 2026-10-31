@@ -82,6 +82,13 @@ every push to `main` of https://github.com/agamemnon140/geografia). Local:
   takes measured deposits from `public/data/earth-minerals-1deg.u8` when
   the file exists (`scripts/convert-mrds.ts`; the USGS server refused
   automated downloads, so it is not shipped yet).
+- M22: flora (`src/sim/biosphere/flora.ts`): net primary productivity by
+  the Miami model (Lieth 1975) scaled by sunshine and soil; soil fertility
+  itemized (base, volcanic ash, alluvium, leaching, old shield, cold);
+  thirteen vegetation classes from the monthly climate, the rivers and the
+  productivity; no succession. Layers Primary productivity, Soil fertility,
+  Vegetation (Life group); Flora section in Explain; production row in
+  Statistics; `scripts/diag-biosphere.ts [Real]`.
 
 ## Where things are
 
@@ -93,6 +100,10 @@ every push to `main` of https://github.com/agamemnon140/geografia). Local:
   conflicts, fill gaps, classify boundaries, elevation, erosion, events),
   `genesis.ts` (initial condition), `riftpath.ts`, `crust.ts` (constants
   with their justification), `plates.ts`, `parcels.ts`.
+- `src/sim/resources/minerals.ts` (M21), `src/sim/biosphere/flora.ts`
+  (M22); worlds without a tectonic history (the real Earth) carry
+  `BuildContext.noHistory`, which silences the rules that read the
+  provenance.
 - `src/sim/hydrology/`, `src/sim/climate/` (ebm, temperature, circulation,
   ocean, moisture, clouds, ice, koppen), `src/sim/pipeline.ts` (build, finalize,
   history, World type), `src/sim/earth.ts` (real Earth, past).

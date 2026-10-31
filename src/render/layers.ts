@@ -1,6 +1,7 @@
 import { ANNUAL, SAMPLES } from '../sim/climate/insolation.ts';
 import { KOPPEN_NAMES } from '../sim/climate/koppen.ts';
 import type { World } from '../sim/pipeline.ts';
+import { VEGETATION_NAMES } from '../sim/biosphere/flora.ts';
 import { MINERALS, MINERAL_COUNT, MINERAL_NAMES } from '../sim/resources/minerals.ts';
 import {
   BOUNDARY_CONVERGENT,
@@ -243,6 +244,42 @@ export const MINERAL_COLORS: RGB[] = [
   [25, 25, 28],
   [130, 70, 170],
   [245, 240, 245],
+];
+
+/** Productivity: parchment through greens to the darkest forest. */
+const NPP_RAMP: Stop[] = [
+  [0, [235, 225, 195]],
+  [100, [215, 210, 150]],
+  [300, [170, 190, 100]],
+  [600, [95, 160, 70]],
+  [900, [40, 120, 55]],
+  [1200, [10, 70, 35]],
+];
+
+/** Soil: pale gray through ochre to dark loam. */
+const SOIL_RAMP: Stop[] = [
+  [0, [210, 205, 195]],
+  [0.3, [205, 175, 120]],
+  [0.6, [150, 110, 60]],
+  [1, [70, 45, 25]],
+];
+
+/** Vegetation colors in VEGETATION_NAMES order: no blues (water keeps them), forests green, grass yellow, dry sand, cold gray. */
+export const VEGETATION_COLORS: RGB[] = [
+  [88, 98, 114],
+  [240, 240, 245],
+  [170, 175, 165],
+  [45, 95, 85],
+  [70, 140, 70],
+  [30, 110, 90],
+  [215, 200, 110],
+  [150, 150, 60],
+  [200, 175, 110],
+  [235, 210, 160],
+  [190, 190, 70],
+  [95, 165, 60],
+  [20, 95, 40],
+  [90, 160, 140],
 ];
 
 const LAKE_COLOR: RGB = [40, 120, 210];
@@ -554,6 +591,54 @@ export const LAYERS: Layer[] = [
     },
     marks: (world) => depositMarks(world, k),
   })),
+  // Life (M22): productivity, soil and vegetation.
+  {
+    id: 'npp',
+    name: 'Primary productivity',
+    group: 'life',
+    legend: { kind: 'ramp', stops: NPP_RAMP, unit: 'g C/m²/yr (deserts under 50, rainforests above 1,000)' },
+    relief: 'light',
+    cellColor: (world, i) => (world.elevation[i] < world.seaLevel ? koppenSea(world.elevation[i] - world.seaLevel) : world.lake[i] >= 0 ? LAKE_COLOR : ramp(NPP_RAMP, world.npp[i])),
+    smooth: (world, px) => {
+      const rel = relief(world, px);
+      return rel < 0 ? koppenSea(rel) : world.lake[px.cell] >= 0 ? LAKE_COLOR : ramp(NPP_RAMP, px.interp(world.npp));
+    },
+  },
+  {
+    id: 'soil',
+    name: 'Soil fertility',
+    group: 'life',
+    legend: { kind: 'ramp', stops: SOIL_RAMP, unit: '0 barren to 1 richest (ash and alluvium raise it, leaching, old shields and cold lower it)' },
+    relief: 'light',
+    cellColor: (world, i) => (world.elevation[i] < world.seaLevel ? koppenSea(world.elevation[i] - world.seaLevel) : world.lake[i] >= 0 ? LAKE_COLOR : ramp(SOIL_RAMP, world.soil[i])),
+    smooth: (world, px) => {
+      const rel = relief(world, px);
+      return rel < 0 ? koppenSea(rel) : world.lake[px.cell] >= 0 ? LAKE_COLOR : ramp(SOIL_RAMP, px.interp(world.soil));
+    },
+  },
+  {
+    id: 'vegetation',
+    name: 'Vegetation',
+    group: 'life',
+    legend: {
+      kind: 'categories',
+      items: VEGETATION_NAMES.slice(1).map((name, k): { color: RGB; label: string } => ({ color: VEGETATION_COLORS[k + 1], label: name })).concat([{ color: LAKE_COLOR, label: 'lake' }]),
+    },
+    relief: 'light',
+    rivers: true,
+    cellColor: (world, i) => {
+      const rel = world.elevation[i] - world.seaLevel;
+      if (rel < 0) return koppenSea(rel);
+      if (world.lake[i] >= 0) return LAKE_COLOR;
+      return VEGETATION_COLORS[world.vegetation[i]] ?? [0, 0, 0];
+    },
+    smooth: (world, px) => {
+      const rel = relief(world, px);
+      if (rel < 0) return koppenSea(rel);
+      if (world.lake[px.cell] >= 0) return LAKE_COLOR;
+      return VEGETATION_COLORS[world.vegetation[px.cell]] ?? [0, 0, 0];
+    },
+  },
 ];
 
 /** The land washed pale and the sea dim, so marks and potentials carry the color. */

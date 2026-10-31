@@ -5,6 +5,7 @@ import type { BasinInfo } from './climate/ocean.ts';
 import { DEG } from './grid/geometry.ts';
 import type { Grid } from './grid/grid.ts';
 import type { LakeInfo } from './hydrology/routing.ts';
+import { VEGETATION_NAMES } from './biosphere/flora.ts';
 import { MINERAL_COUNT } from './resources/minerals.ts';
 
 /** Per-world summary statistics (DESIGN 3.6). */
@@ -88,6 +89,10 @@ export interface WorldStats {
   koppen: { A: number; B: number; C: number; D: number; E: number };
   /** Deposits per mineral, in resources/minerals.ts MINERALS order (M21). */
   depositCounts: number[];
+  /** Net primary productivity of the land, Gt C per year (Earth about 56) (M22). */
+  landNppGtC: number;
+  /** Land fraction per vegetation class, in biosphere/flora.ts VEGETATION_NAMES order (index 0, the ocean, stays 0). */
+  vegetationShares: number[];
 }
 
 export interface ReliefFields {
@@ -127,6 +132,9 @@ export interface BiomeFields {
   seaIceMonths: Uint8Array;
   iceSheet: Uint8Array;
   koppen: Uint8Array;
+  /** g C/m^2/yr. */
+  npp: Float64Array;
+  vegetation: Uint8Array;
 }
 
 export interface ResourceFields {
@@ -175,6 +183,8 @@ export function computeStats(grid: Grid, relief: ReliefFields, hydro: HydrologyF
   let longwaveSum = 0;
   const koppen = { A: 0, B: 0, C: 0, D: 0, E: 0 };
   const depositCounts = new Array<number>(MINERAL_COUNT).fill(0);
+  const vegetationArea = new Array<number>(VEGETATION_NAMES.length).fill(0);
+  let nppSum = 0;
   const hyps = new Array<number>(HYPSOMETRY_BINS).fill(0);
   for (let i = 0; i < n; i++) {
     const e = elevation[i] - seaLevel;
@@ -208,6 +218,9 @@ export function computeStats(grid: Grid, relief: ReliefFields, hydro: HydrologyF
       if (lakeAtMouth >= 0 && hydro.lakes[lakeAtMouth].endorheic) endorheicArea += a;
       if (biome.iceSheet[i]) iceSheet += a;
       sunshineSum += a * climate.sunshineHours[i];
+      // km^2 times g/m^2 is 1e6 g; a gigaton is 1e15 g.
+      nppSum += a * biome.npp[i] * 1e-9;
+      vegetationArea[biome.vegetation[i]] += a;
       const group = koppenGroup(biome.koppen[i]) as keyof typeof koppen;
       if (group in koppen) koppen[group] += a;
     }
@@ -310,6 +323,8 @@ export function computeStats(grid: Grid, relief: ReliefFields, hydro: HydrologyF
       E: land > 0 ? koppen.E / land : 0,
     },
     depositCounts,
+    landNppGtC: nppSum,
+    vegetationShares: vegetationArea.map((v) => (land > 0 ? v / land : 0)),
   };
 }
 

@@ -87,6 +87,14 @@ Everything past the physical geography sits behind the "Beyond geography" checkb
 **Deposits from potentials.** Real deposits are sparse points. Cell by cell, a hash of the seed is compared with the potential, so a planet gets fixed, sparse deposits that are dense where the potential is high and absent where it is zero, and nothing about the geography changes. On the Earth preset a planet gets a few hundred deposits of each resource: copper along the arcs, coal on the deltas and lake shores, salt in the closed basins of the interiors, gold in the collision belts, iron and uranium in the old interiors.
 
 **The real Earth** has no tectonic history here, so its potentials are zero; it shows measured deposits from the USGS Mineral Resources Data System once that public-domain file has been converted and shipped, and says "not available" until then.
+
+## 10. Beyond geography: flora
+
+**Growth.** Every land cell gets a net primary productivity from the Miami model (Lieth 1975): the lesser of a warmth curve and a rainfall curve fitted to measured stands, 3,000 grams of dry matter per square meter a year at most, of which 45% is carbon; a sunny sky adds up to a fifth and a cloudy one takes a fifth; the soil scales it from 0.6 on barren ground to 1.4 on the richest. The real Earth comes out at 52 Gt of carbon a year on land (measured about 56), with the Amazon near 900 g C/m² and the Sahara under 150.
+
+**Soil.** Fertility is itemized from what the simulator stored: a base of 0.45, up to 0.3 more under volcanic ash (the volcanic rock of arcs and hotspots), up to 0.25 more on flood plains of large rivers and in basins filled with sediment, minus up to 0.25 for leaching where it is hotter than 20 °C and wetter than 1,500 mm (the Amazon's soils are poor for that reason), minus 0.1 on old shields that have been weathering since the planet's start, minus 0.15 where the annual mean is below freezing; ice sheets have none.
+
+**Vegetation.** Thirteen classes richer than Köppen's letters, read from the monthly climate, the rivers and the productivity: ice or bare rock, tundra where no month reaches 10 °C, boreal forest where winters freeze and summers stay under 18 °C, temperate forest and temperate rainforest (over 1,500 mm), steppe and prairie, Mediterranean woodland where the summer gets less than half the winter's rain, semi-arid scrub, desert under 250 mm, savanna and tropical seasonal forest where a month runs dry, tropical rainforest above 1,800 mm without a dry month, and wetland on the flood plains of large river mouths and lake shores. There is no succession: the cover is what the current climate supports, so a climate that shifts between two steps of the timeline shifts its forests at once.
 `;
 
 /** Render the markdown subset above to HTML. */

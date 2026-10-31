@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { VEG_BOREAL, VEG_DESERT, VEG_ICE, VEG_RAINFOREST, VEG_TUNDRA } from '../src/sim/biosphere/flora.ts';
 import { EARTH_DATA_PATH, EARTH_HISTORY_AGES, EARTH_HISTORY_PATH, EARTH_HISTORY_REFERENCE, buildEarth, buildEarthKeyframe, earthContext, earthElevationAt, parseEarthElevation, parseEarthHistory } from '../src/sim/earth.ts';
 import { DEG } from '../src/sim/grid/geometry.ts';
 import { Grid } from '../src/sim/grid/grid.ts';
@@ -89,6 +90,25 @@ describe('the real Earth reference', () => {
       expect(Number.isFinite(earth.sunshineHours[i])).toBe(true);
       expect(Number.isFinite(earth.cloudAnnual[i])).toBe(true);
     }
+  });
+
+  it('grows an Earth-like flora (M22) and carries no mineral potential without a history (M21)', () => {
+    // Terrestrial production about 56 Gt C/yr; the model's extra ice and dry interiors take some.
+    expect(earth.stats.landNppGtC).toBeGreaterThan(35);
+    expect(earth.stats.landNppGtC).toBeLessThan(75);
+    const at = (lat: number, lon: number): number => {
+      let i = cellAt(lat, lon);
+      if (earth.lake[i] >= 0) for (const nb of Grid.get(earth.level).neighbors(i)) if (earth.lake[nb] < 0 && earth.elevation[nb] >= 0) { i = nb; break; }
+      return i;
+    };
+    expect(earth.vegetation[at(-3.1, -60)]).toBe(VEG_RAINFOREST);
+    expect(earth.vegetation[at(23, 10)]).toBe(VEG_DESERT);
+    expect(earth.vegetation[at(62, 129.7)]).toBe(VEG_BOREAL);
+    expect(earth.vegetation[at(74, 100)]).toBe(VEG_TUNDRA);
+    expect(earth.vegetation[at(-80, 90)]).toBe(VEG_ICE);
+    expect(earth.npp[at(-3.1, -60)]).toBeGreaterThan(600);
+    expect(earth.npp[at(23, 10)]).toBeLessThan(200);
+    for (let i = 0; i < earth.n; i += 97) expect(earth.mineralPotential[i]).toBe(0);
   });
 });
 

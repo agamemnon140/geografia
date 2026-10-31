@@ -1,3 +1,4 @@
+import { computeFlora } from './biosphere/flora.ts';
 import { computeClimate } from './climate/climate.ts';
 import type { CirculationInfo } from './climate/circulation.ts';
 import { classifyKoppen } from './climate/koppen.ts';
@@ -147,6 +148,13 @@ export interface World {
   iceVolumeKm3: number;
   /** Koppen code, see climate/koppen.ts. */
   koppen: Uint8Array;
+  /** Flora (M22, biosphere/flora.ts): net primary productivity in g C/m^2/yr, soil fertility 0 to 1 with its terms, vegetation class. */
+  npp: FloatArray;
+  soil: FloatArray;
+  soilAsh: FloatArray;
+  soilAlluvium: FloatArray;
+  soilLoss: FloatArray;
+  vegetation: Uint8Array;
   circulation: CirculationInfo;
   /** Global mean sea-level temperature for this insolation and glacial phase, degrees C. */
   globalMeanTemperature: number;
@@ -175,6 +183,7 @@ export function worldBuffers(world: World): ArrayBuffer[] {
     world.windU, world.windV, world.cloud, world.cloudAnnual, world.sunshineHours,
     world.basin, world.streamfunction, world.currentU, world.currentV, world.sstAnomaly,
     world.seaIceMonths, world.iceSheet, world.koppen,
+    world.npp, world.soil, world.soilAsh, world.soilAlluvium, world.soilLoss, world.vegetation,
   ];
   return arrays.map((a) => a.buffer as ArrayBuffer);
 }
@@ -272,7 +281,9 @@ export interface BuildContext {
   hydro: Hydrology;
   /** Use this sea level instead of solving it from the water inventory (the real Earth's datum is zero). */
   seaLevelOverride?: number;
-  /** Measured deposits per cell (bit per mineral) for a world without a tectonic history (the real Earth); potentials stay zero. */
+  /** True for a relief without a tectonic history (the real Earth and its reconstructions): the rules that read the provenance stay quiet. */
+  noHistory?: boolean;
+  /** Measured deposits per cell (bit per mineral) for a world without a tectonic history; potentials stay zero. */
   measuredDeposits?: Uint8Array;
 }
 
@@ -307,9 +318,23 @@ export function finalize(ctx: BuildContext, state: ReliefState, onProgress: Prog
   onProgress('biomes', 0.94);
   const koppen = classifyKoppen(grid, state.elevation, seaLevel, climate.temperature.samples, climate.moisture.samples);
 
-  // Resources from the provenance (M21); measured ones for a world without a history.
-  const minerals = ctx.measuredDeposits
-    ? { potential: new Float64Array(MINERAL_COUNT * n), deposits: ctx.measuredDeposits }
+  // Flora (M22) on the final rivers and climate.
+  const flora = computeFlora(grid, state, seaLevel, {
+    temperatureAnnual: climate.temperature.annual,
+    temperature: climate.temperature.samples,
+    precipitation: hydro.precipitation,
+    precipitationSamples: climate.moisture.samples,
+    sunshineHours: climate.sunshineHours,
+    iceSheet: climate.ice.iceSheet,
+    discharge: hydro.discharge,
+    downstream: hydro.downstream,
+    lake: hydro.lake,
+    history: !ctx.noHistory,
+  });
+
+  // Resources from the provenance (M21); measured ones, or none, for a world without a history.
+  const minerals = ctx.noHistory
+    ? { potential: new Float64Array(MINERAL_COUNT * n), deposits: ctx.measuredDeposits ?? new Uint8Array(n) }
     : computeMinerals(grid, state, seaLevel, params.seed, params.radiusKm);
 
   onProgress('stats', 0.96);
@@ -351,7 +376,7 @@ export function finalize(ctx: BuildContext, state: ReliefState, onProgress: Prog
       cloudShortwave: climate.temperature.cloudShortwave,
       cloudLongwave: climate.temperature.cloudLongwave,
     },
-    { seaIceMonths: climate.ice.seaIceMonths, iceSheet: climate.ice.iceSheet, koppen },
+    { seaIceMonths: climate.ice.seaIceMonths, iceSheet: climate.ice.iceSheet, koppen, npp: flora.npp, vegetation: flora.vegetation },
     { deposits: minerals.deposits },
   );
 
@@ -419,6 +444,12 @@ export function finalize(ctx: BuildContext, state: ReliefState, onProgress: Prog
     iceSheet: climate.ice.iceSheet,
     iceVolumeKm3: climate.ice.iceVolumeKm3,
     koppen,
+    npp: flora.npp,
+    soil: flora.soil,
+    soilAsh: flora.soilAsh,
+    soilAlluvium: flora.soilAlluvium,
+    soilLoss: flora.soilLoss,
+    vegetation: flora.vegetation,
     circulation: climate.circulation,
     globalMeanTemperature: climate.globalMeanTemperature,
     plates: state.plates,
