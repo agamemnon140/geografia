@@ -1,4 +1,5 @@
 import { GlobeView } from '../render/globe.ts';
+import { renderModel } from './model.ts';
 import { LAYERS, cellColors, layerById, paintCells } from '../render/layers.ts';
 import { renderLegend } from '../render/legend.ts';
 import { MapView } from '../render/map.ts';
@@ -27,7 +28,7 @@ const STRIP_FRAME_W = 480;
 const STRIP_FRAME_H = 240;
 const STRIP_COLUMNS = 3;
 
-type ViewId = 'map' | 'equalEarth' | 'globe' | 'compare';
+type ViewId = 'map' | 'equalEarth' | 'globe' | 'compare' | 'model';
 
 /** A full build: its final world and, for the most recent one, the timeline keyframes (oldest first). */
 interface GalleryEntry {
@@ -95,6 +96,7 @@ function template(): string {
             <button data-view="equalEarth" title="Equal Earth projection: equal-area, the whole world at once">Equal Earth</button>
             <button data-view="globe" title="Drag to turn, click to inspect">Globe</button>
             <button data-view="compare" title="Two steps or two planets side by side">Compare</button>
+            <button data-view="model" title="The physics and the rationale of the simulator">Model</button>
           </div>
           <label id="compareControls" class="compare-controls hidden">B: <select id="compareSelect"></select></label>
           <span id="viewHint" class="hint"></span>
@@ -106,6 +108,7 @@ function template(): string {
             <div class="compare-pane"><div id="titleA" class="pane-title">A</div><canvas id="mapA"></canvas></div>
             <div class="compare-pane"><div id="titleB" class="pane-title">B</div><canvas id="mapB"></canvas></div>
           </div>
+          <div id="stageModel" class="pane model hidden"><article class="model-text">${renderModel()}</article></div>
         </div>
         <div id="timelineRow" class="timeline hidden">
           <button id="play" title="Play the history">Play</button>
@@ -151,6 +154,7 @@ export function mountApp(root: HTMLElement): void {
   const stageMap = q<HTMLDivElement>('#stageMap');
   const stageGlobe = q<HTMLDivElement>('#stageGlobe');
   const stageCompare = q<HTMLDivElement>('#stageCompare');
+  const stageModel = q<HTMLDivElement>('#stageModel');
   const titleA = q<HTMLDivElement>('#titleA');
   const titleB = q<HTMLDivElement>('#titleB');
   const timelineRow = q<HTMLDivElement>('#timelineRow');
@@ -349,6 +353,7 @@ export function mountApp(root: HTMLElement): void {
     stageMap.classList.toggle('hidden', id !== 'map' && id !== 'equalEarth');
     stageGlobe.classList.toggle('hidden', id !== 'globe');
     stageCompare.classList.toggle('hidden', id !== 'compare');
+    stageModel.classList.toggle('hidden', id !== 'model');
     compareControls.classList.toggle('hidden', id !== 'compare');
     map.setProjection(id === 'equalEarth' ? 'equalEarth' : 'equirect');
     viewHint.textContent = id === 'globe'
@@ -357,7 +362,9 @@ export function mountApp(root: HTMLElement): void {
         ? 'A follows the history slider; pick B on the right; wheel zooms both panes together'
         : id === 'equalEarth'
           ? 'equal-area: sizes compare truly; drag turns the central meridian, wheel zooms, double-click resets'
-          : 'wheel zooms around the cursor, drag pans, double-click shows the whole world';
+          : id === 'model'
+            ? 'how the simulator works and why; the full specification is docs/DESIGN.md in the repository'
+            : 'wheel zooms around the cursor, drag pans, double-click shows the whole world';
     refreshVisibleViews();
     renderStats();
   };

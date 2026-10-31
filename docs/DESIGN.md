@@ -311,6 +311,7 @@ Follow-ups after phase 2, driven by looking at the planets next to the real one:
 - M16: the real Earth's past on the timeline (3.9): PALEOMAP paleo-reliefs every 10 million years from 200 Ma, finalized with the simulator's climate and streamed as keyframes after the present.
 - M17: dissected coasts (3.3): slab break-off leaves remnant seas between stalled continents, back-arc openings hinge at one end and leave peninsulas, lower platforms and coastal plains put more land near sea level; deltas fill basins to the water surface and no higher.
 - M18: resolution independence and the fine grid (3.1, 3.3): tectonic constants in reference cells converted to the grid in use, so level 7 (55 km cells) builds the same planet in kilometers; a Fine grid option in the app; Budyko runoff (3.4); plate mergers and captures no longer stack aliased parcels into fields of peaks.
+- M19: the Model view, a reader's guide to the physics and the rationale inside the app (`src/ui/model.ts`), and `CLAUDE.md`, a brief of the project's state, conventions and lessons for a new working session.
 
 ## 8. User interface
 

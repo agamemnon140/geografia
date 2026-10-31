@@ -62,6 +62,10 @@ currents, sstAnomaly, plates, crustAge, thickness, cells.
   zoom). A legend sits under the layer selector.
 - The page is installable: on a phone, "Add to Home Screen" gives it an
   icon (the default planet's globe) and a full-screen window.
+- The Model view explains the physics and the rationale of every link in
+  plain prose, with the comparison against Earth and the known deviations;
+  `docs/DESIGN.md` is the full specification and `CLAUDE.md` a brief of the
+  project's state and conventions.
 - Real Earth builds the measured relief (NOAA ETOPO5 at half a degree,
   shipped in `public/data/`) with the simulator's own rivers, climate and
   biomes, so the links can be judged against the planet we know; it joins

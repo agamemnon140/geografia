@@ -339,6 +339,68 @@ table.stats td:last-child {
   display: none;
 }
 
+.stage .pane.model {
+  display: block;
+  overflow-y: auto;
+  align-self: stretch;
+}
+
+.stage .pane.model.hidden {
+  display: none;
+}
+
+.model-text {
+  max-width: 78ch;
+  margin: 0 auto;
+  padding: 8px 16px 32px;
+  line-height: 1.55;
+  font-size: 14px;
+}
+
+.model-text h1 {
+  font-size: 22px;
+  margin: 8px 0 12px;
+}
+
+.model-text h2 {
+  font-size: 17px;
+  margin: 26px 0 8px;
+  border-bottom: 1px solid #2a2e36;
+  padding-bottom: 4px;
+}
+
+.model-text h3 {
+  font-size: 15px;
+  margin: 18px 0 6px;
+}
+
+.model-text p,
+.model-text li {
+  margin: 0 0 10px;
+}
+
+.model-text ul {
+  padding-left: 20px;
+}
+
+.model-text table {
+  border-collapse: collapse;
+  margin: 8px 0 14px;
+  font-size: 13px;
+}
+
+.model-text th,
+.model-text td {
+  border: 1px solid #2a2e36;
+  padding: 4px 8px;
+  text-align: left;
+}
+
+.model-text code {
+  font-family: ui-monospace, monospace;
+  font-size: 12.5px;
+}
+
 .compare-pane {
   min-width: 0;
 }
