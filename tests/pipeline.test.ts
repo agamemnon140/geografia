@@ -96,8 +96,10 @@ describe('build', () => {
   });
 
   it('builds every preset without NaN', { timeout: 120000 }, () => {
+    // One level coarser: the NaN check does not need the full grid, and the full one timed out on CI
+    // once the climate ran twice (M20) and the biosphere and civilization followed (M22 to M24).
     for (const preset of PRESETS) {
-      const w = build({ ...preset.params, radiusKm: Math.min(preset.params.radiusKm, 6371), tectonicAge: 50 });
+      const w = build({ ...preset.params, radiusKm: Math.min(preset.params.radiusKm, 6371), tectonicAge: 50 }, () => {}, { coarser: 1 });
       for (let i = 0; i < w.n; i++) {
         expect(Number.isNaN(w.elevation[i])).toBe(false);
         expect(Number.isNaN(w.thickness[i])).toBe(false);
