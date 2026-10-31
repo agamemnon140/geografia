@@ -292,6 +292,7 @@ Follow-ups after phase 2, driven by looking at the planets next to the real one:
 - M12: the initial condition as a rifted supercontinent instead of noise blobs; Koppen legend in plain words (3.3, 8.4).
 - M13: continents with history: one supercontinent with a bent, stair-stepped first rift; slab pull; uneven rifts, some of which fail and leave gulfs; collisions that close seaways; island arcs that accrete and Andean margins that thicken (3.3).
 - M14: margin events: back-arc basins opened by slab rollback (arcs become small plates, marginal seas open behind them) and coastal slivers captured at sliding margins (3.3).
+- M15: the Equal Earth view (8.4) and an installable app: a web manifest with icons rendered from the default planet by `scripts/make-icons.ts`, so the page can be saved to a phone's home screen.
 
 ## 8. User interface
 
@@ -330,6 +331,7 @@ The UI exists to expose causality, not to decorate. Every number on screen has a
 The screen is one planet seen three ways, chosen in a view bar above the stage:
 
 - Map: the equirectangular painter of v1, as a window on the cylinder: the wheel zooms around the cursor up to sixteen times (a sideways scroll pans along the parallels), dragging pans with the world wrapping around its antimeridian, a double click shows the whole world again. While a drag lasts the last rendering is translated; the window is re-rendered when it ends. In the Compare view both panes share one window.
+- Equal Earth (M15): the same window machinery on the Equal Earth projection (Savric, Patterson and Jenny, 2018; `render/equalearth.ts`), an equal-area pseudocylindrical projection, so the sizes of continents and oceans compare truly and the whole world is on screen with no stretching at the poles. The raster lookup takes a projection id (`render/raster.ts`); pixels outside the outline carry no cell and paint the background. Dragging turns the central meridian, the wheel zooms around the cursor, a double click resets; the hillshade uses the equal-area property (every pixel covers the same ground).
 - Globe: an orthographic globe rendered on a 2D canvas without any library. Every pixel of the disc is unprojected to the sphere, rotated into the planet's frame and resolved with the same nearest-cell walk as the map, so the lookup is cached per view direction and a layer change only repaints. Drag turns the globe, a click picks a cell, a cosine light from the upper left gives the relief its roundness. The same painter serves both views: a layer is still one color per cell.
 - Compare: two maps side by side. A is the planet on the timeline; B is any keyframe of the same build or the final state of any gallery entry, so "this basin before and after the mountains rose" and "same parameters, other seed" are one dropdown away. The statistics table grows a second column and a click in either pane explains that pane's cell.
 

@@ -27,7 +27,7 @@ const STRIP_FRAME_W = 480;
 const STRIP_FRAME_H = 240;
 const STRIP_COLUMNS = 3;
 
-type ViewId = 'map' | 'globe' | 'compare';
+type ViewId = 'map' | 'equalEarth' | 'globe' | 'compare';
 
 /** A full build: its final world and, for the most recent one, the timeline keyframes (oldest first). */
 interface GalleryEntry {
@@ -91,6 +91,7 @@ function template(): string {
         <div class="viewbar">
           <div class="views">
             <button data-view="map" class="active" title="Equirectangular map">Map</button>
+            <button data-view="equalEarth" title="Equal Earth projection: equal-area, the whole world at once">Equal Earth</button>
             <button data-view="globe" title="Drag to turn, click to inspect">Globe</button>
             <button data-view="compare" title="Two steps or two planets side by side">Compare</button>
           </div>
@@ -267,7 +268,7 @@ export function mountApp(root: HTMLElement): void {
 
   const refreshVisibleViews = (): void => {
     if (!world) return;
-    if (view === 'map' && stale.has('map')) {
+    if ((view === 'map' || view === 'equalEarth') && stale.has('map')) {
       map.setWorld(world);
       stale.delete('map');
     } else if (view === 'globe' && stale.has('globe')) {
@@ -339,15 +340,18 @@ export function mountApp(root: HTMLElement): void {
   const setView = (id: ViewId): void => {
     view = id;
     for (const b of viewButtons) b.classList.toggle('active', b.dataset.view === id);
-    stageMap.classList.toggle('hidden', id !== 'map');
+    stageMap.classList.toggle('hidden', id !== 'map' && id !== 'equalEarth');
     stageGlobe.classList.toggle('hidden', id !== 'globe');
     stageCompare.classList.toggle('hidden', id !== 'compare');
     compareControls.classList.toggle('hidden', id !== 'compare');
+    map.setProjection(id === 'equalEarth' ? 'equalEarth' : 'equirect');
     viewHint.textContent = id === 'globe'
       ? 'drag to turn, click to inspect'
       : id === 'compare'
         ? 'A follows the history slider; pick B on the right; wheel zooms both panes together'
-        : 'wheel zooms around the cursor, drag pans, double-click shows the whole world';
+        : id === 'equalEarth'
+          ? 'equal-area: sizes compare truly; drag turns the central meridian, wheel zooms, double-click resets'
+          : 'wheel zooms around the cursor, drag pans, double-click shows the whole world';
     refreshVisibleViews();
     renderStats();
   };

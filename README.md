@@ -51,12 +51,15 @@ currents, sstAnomaly, plates, crustAge, thickness, cells.
   and open marginal seas behind arcs that become small plates, and sliding
   coasts lose slivers that travel with the oceanic plate next door. The
   events are listed under the statistics.
-- Three views in the bar above the stage: Map (wheel zooms around the
-  cursor, drag pans with wrap-around, double-click resets), Globe (drag to
-  turn, click to inspect; software-rendered, no WebGL) and Compare (A
-  follows the history slider, B is any keyframe or any gallery planet, with
-  the statistics in two columns and one shared zoom). A legend sits under
-  the layer selector.
+- Four views in the bar above the stage: Map (equirectangular; wheel zooms
+  around the cursor, drag pans with wrap-around, double-click resets),
+  Equal Earth (equal-area, the whole world at once; drag turns the central
+  meridian), Globe (drag to turn, click to inspect; software-rendered, no
+  WebGL) and Compare (A follows the history slider, B is any keyframe or
+  any gallery planet, with the statistics in two columns and one shared
+  zoom). A legend sits under the layer selector.
+- The page is installable: on a phone, "Add to Home Screen" gives it an
+  icon (the default planet's globe) and a full-screen window.
 - Real Earth builds the measured relief (NOAA ETOPO5 at half a degree,
   shipped in `public/data/`) with the simulator's own rivers, climate and
   biomes, so the links can be judged against the planet we know; it joins

@@ -4,7 +4,7 @@ import type { FloatArray, World } from '../sim/pipeline.ts';
 import type { RGB } from './colors.ts';
 import { RIVER_COLOR, RIVER_MIN_KM3, type Layer } from './layers.ts';
 import { strokeSegment } from './lines.ts';
-import { FULL_VIEW, equirectRaster, latLonToPixel, type Raster, type Viewport } from './raster.ts';
+import { FULL_VIEW, equalEarthMetersPerPixel, equirectRaster, latLonToPixel, projectLatLon, projectionRaster, type ProjectionId, type Raster, type Viewport } from './raster.ts';
 
 /**
  * The smooth painter (DESIGN 8.5). Layers that define `smooth` get a sampler
@@ -142,6 +142,26 @@ export function mapPaintOptions(world: World, width: number, height: number, sam
     },
     pixelsPerCell: (width * view.zoom * Math.sqrt((4 * Math.PI) / grid.n)) / (2 * Math.PI),
   };
+}
+
+/** Projection, pixel scale and river scale of a window in a flat projection. */
+export function projectionPaintOptions(world: World, width: number, height: number, sample: number, view: Viewport, projection: ProjectionId): PaintOptions {
+  if (projection === 'equirect') return mapPaintOptions(world, width, height, sample, view);
+  const grid = Grid.get(world.level);
+  const radiusM = world.radiusKm * 1000;
+  const meters = equalEarthMetersPerPixel(radiusM, width, height, view.zoom);
+  return {
+    sample,
+    project: (cell) => projectLatLon(projection, grid.lat[cell], grid.lon[cell], width, height, view),
+    metersPerPixel: () => [meters, meters],
+    pixelsPerCell: (radiusM * Math.sqrt((4 * Math.PI) / grid.n)) / meters,
+  };
+}
+
+/** Smooth paint of a layer onto an RGBA buffer of the given size, for a window of a flat projection. */
+export function paintProjection(world: World, layer: Layer, width: number, height: number, out: Uint8ClampedArray, sample = ANNUAL, view: Viewport = FULL_VIEW, projection: ProjectionId = 'equirect'): void {
+  const raster = projectionRaster(Grid.get(world.level), width, height, view, projection);
+  paintSmooth(world, raster, layer, out, projectionPaintOptions(world, width, height, sample, view, projection));
 }
 
 /** Smooth paint of a layer onto an equirectangular RGBA buffer of the given size, for a window of the map. */

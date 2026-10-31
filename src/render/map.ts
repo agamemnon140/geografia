@@ -2,21 +2,27 @@ import { ANNUAL } from '../sim/climate/insolation.ts';
 import { Grid } from '../sim/grid/grid.ts';
 import type { World } from '../sim/pipeline.ts';
 import { layerById } from './layers.ts';
-import { paintEquirect } from './paint.ts';
-import { FULL_VIEW, clampViewport, equirectRaster, latLonToPixel, pixelToLatLon, type Viewport } from './raster.ts';
+import { paintProjection } from './paint.ts';
+import { FULL_VIEW, clampViewport, projectLatLon, projectionRaster, unprojectPixel, type ProjectionId, type Viewport } from './raster.ts';
 
 /** Zoom factor per wheel notch. */
 const WHEEL_ZOOM = 1.25;
+
+/** A longitude difference in radians brought into (-pi, pi]. */
+function wrapDegrees(dLon: number): number {
+  return ((dLon + 3 * Math.PI) % (2 * Math.PI)) - Math.PI;
+}
 /** Pointer movement below which a press counts as a click. */
 const CLICK_SLOP_PX = 3;
 
 /**
- * Equirectangular map on a canvas with a fixed internal resolution, scaled
- * by CSS. The wheel zooms around the cursor (or pans sideways on a
- * horizontal scroll), dragging pans with the world wrapping around its
- * antimeridian, a double click shows the whole world again, and a click
- * picks a cell. While a drag lasts the last rendering is translated; the
- * window is re-rendered when it ends.
+ * Flat map (equirectangular, or Equal Earth) on a canvas with a fixed
+ * internal resolution, scaled by CSS. The wheel zooms around the cursor (or
+ * pans sideways on a horizontal scroll), dragging pans (the equirectangular
+ * world wraps around its antimeridian; Equal Earth turns its central
+ * meridian), a double click shows the whole world again, and a click picks
+ * a cell. While a drag lasts the last rendering is translated; the window
+ * is re-rendered when it ends.
  */
 export class MapView {
   private canvas: HTMLCanvasElement;
@@ -28,12 +34,15 @@ export class MapView {
   private layerId = 'elevation';
   private sample = ANNUAL;
   private viewport: Viewport = { ...FULL_VIEW };
+  private projection: ProjectionId = 'equirect';
   private selected = -1;
   private clickHandlers: ((cell: number) => void)[] = [];
   private viewHandlers: ((view: Viewport) => void)[] = [];
   private dragging = false;
   private dragStartX = 0;
   private dragStartY = 0;
+  private dragStartPx = 0;
+  private dragStartPy = 0;
   private dragDx = 0;
   private dragDy = 0;
   private snapshot: HTMLCanvasElement | null = null;
@@ -77,6 +86,13 @@ export class MapView {
     return { ...this.viewport };
   }
 
+  /** Switch between the equirectangular cylinder and Equal Earth; the window carries over. */
+  setProjection(projection: ProjectionId): void {
+    if (projection === this.projection) return;
+    this.projection = projection;
+    this.draw();
+  }
+
   /** Change the window; notifies listeners (used to keep the two panes of the Compare view together). */
   setView(view: Viewport, notify = true): void {
     const next = clampViewport(view);
@@ -108,7 +124,7 @@ export class MapView {
 
   draw(): void {
     if (!this.world) return;
-    paintEquirect(this.world, layerById(this.layerId), this.width, this.height, this.image.data, this.sample, this.viewport);
+    paintProjection(this.world, layerById(this.layerId), this.width, this.height, this.image.data, this.sample, this.viewport, this.projection);
     this.ctx.putImageData(this.image, 0, 0);
     if (this.selected >= 0) this.drawMarker(this.selected);
   }
@@ -116,7 +132,7 @@ export class MapView {
   private drawMarker(cell: number): void {
     if (!this.world) return;
     const grid = Grid.get(this.world.level);
-    const [px, py] = latLonToPixel(grid.lat[cell], grid.lon[cell], this.width, this.height, this.viewport);
+    const [px, py] = projectLatLon(this.projection, grid.lat[cell], grid.lon[cell], this.width, this.height, this.viewport);
     if (px < -10 || py < -10 || px > this.width + 10 || py > this.height + 10) return;
     const ctx = this.ctx;
     ctx.save();
@@ -161,14 +177,18 @@ export class MapView {
     const factor = event.deltaY < 0 ? WHEEL_ZOOM : 1 / WHEEL_ZOOM;
     const zoom = Math.min(16, Math.max(1, this.viewport.zoom * factor));
     if (zoom === this.viewport.zoom) return;
-    // Keep the point under the cursor where it is.
-    const [lat, lon] = pixelToLatLon(px, py, this.width, this.height, this.viewport);
+    // Keep the point under the cursor where it is (when the cursor is on the map at all).
     const next = clampViewport({ ...this.viewport, zoom });
-    const [lat2, lon2] = pixelToLatLon(px, py, this.width, this.height, next);
+    const before = unprojectPixel(this.projection, px, py, this.width, this.height, this.viewport);
+    const after = unprojectPixel(this.projection, px, py, this.width, this.height, next);
+    if (!before || !after) {
+      this.setView(next);
+      return;
+    }
     this.setView({
       zoom,
-      lon0: next.lon0 + ((lon - lon2) * 180) / Math.PI,
-      lat0: next.lat0 + ((lat - lat2) * 180) / Math.PI,
+      lon0: next.lon0 + (wrapDegrees(before[1] - after[1]) * 180) / Math.PI,
+      lat0: next.lat0 + ((before[0] - after[0]) * 180) / Math.PI,
     });
   }
 
@@ -177,6 +197,7 @@ export class MapView {
     this.dragging = true;
     this.dragStartX = event.clientX;
     this.dragStartY = event.clientY;
+    [this.dragStartPx, this.dragStartPy] = this.pixelOf(event);
     this.dragDx = 0;
     this.dragDy = 0;
     this.canvas.setPointerCapture(event.pointerId);
@@ -199,7 +220,7 @@ export class MapView {
     ctx.fillStyle = '#14161a';
     ctx.fillRect(0, 0, this.width, this.height);
     ctx.drawImage(this.snapshot, this.dragDx, this.dragDy);
-    if (this.viewport.zoom === 1) {
+    if (this.viewport.zoom === 1 && this.projection === 'equirect') {
       // The whole cylinder is on screen: show the world wrapping around.
       ctx.drawImage(this.snapshot, this.dragDx - this.width, this.dragDy);
       ctx.drawImage(this.snapshot, this.dragDx + this.width, this.dragDy);
@@ -217,11 +238,22 @@ export class MapView {
     const moved = Math.abs(this.dragDx) >= CLICK_SLOP_PX || Math.abs(this.dragDy) >= CLICK_SLOP_PX;
     if (moved) {
       const view = this.viewport;
-      this.setView({
-        zoom: view.zoom,
-        lon0: view.lon0 - (this.dragDx / this.width) * (360 / view.zoom),
-        lat0: view.lat0 + (this.dragDy / this.height) * (180 / view.zoom),
-      });
+      // The ground under the pointer follows it: compare where the drag began and ended.
+      const from = unprojectPixel(this.projection, this.dragStartPx, this.dragStartPy, this.width, this.height, view);
+      const to = unprojectPixel(this.projection, this.dragStartPx + this.dragDx, this.dragStartPy + this.dragDy, this.width, this.height, view);
+      if (from && to) {
+        this.setView({
+          zoom: view.zoom,
+          lon0: view.lon0 - (wrapDegrees(to[1] - from[1]) * 180) / Math.PI,
+          lat0: view.lat0 - ((to[0] - from[0]) * 180) / Math.PI,
+        });
+      } else {
+        this.setView({
+          zoom: view.zoom,
+          lon0: view.lon0 - (this.dragDx / this.width) * (360 / view.zoom),
+          lat0: view.lat0 + (this.dragDy / this.height) * (180 / view.zoom),
+        });
+      }
       this.draw();
       return;
     }
@@ -229,7 +261,7 @@ export class MapView {
     const x = Math.floor(px);
     const y = Math.floor(py);
     if (x < 0 || y < 0 || x >= this.width || y >= this.height) return;
-    const raster = equirectRaster(Grid.get(this.world.level), this.width, this.height, this.viewport);
+    const raster = projectionRaster(Grid.get(this.world.level), this.width, this.height, this.viewport, this.projection);
     const cell = raster.cell[y * this.width + x];
     if (cell < 0) return;
     this.select(cell);
