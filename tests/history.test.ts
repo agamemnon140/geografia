@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { EARTH } from '../src/sim/params.ts';
-import { build, buildHistory, compactWorld, finalize, keyframeSteps, worldBuffers } from '../src/sim/pipeline.ts';
+import { build, buildHistory, compactWorld, finalize, keyframeSteps, keyframeStepsEvery, worldBuffers } from '../src/sim/pipeline.ts';
 
 function sameBytes(a: ArrayBufferView, b: ArrayBufferView): boolean {
   if (a.byteLength !== b.byteLength) return false;
@@ -15,6 +15,29 @@ describe('timeline keyframes', () => {
     expect(keyframeSteps(200, 8)).toEqual([22, 44, 67, 89, 111, 133, 156, 178]);
     expect(keyframeSteps(100, 1)).toEqual([50]);
     expect(keyframeSteps(50, 0)).toEqual([]);
+  });
+
+  it('keeps a keyframe every 25 million years and widens the interval to fit the cap (M25)', () => {
+    expect(keyframeStepsEvery(200, 25, 8)).toEqual([25, 50, 75, 100, 125, 150, 175]);
+    expect(keyframeStepsEvery(400, 25, 8)).toEqual([50, 100, 150, 200, 250, 300, 350]);
+    expect(keyframeStepsEvery(400, 25, 4)).toEqual([100, 200, 300]);
+    expect(keyframeStepsEvery(210, 25, 8)).toEqual([25, 50, 75, 100, 125, 150, 175, 200]);
+    expect(keyframeStepsEvery(50, 25, 8)).toEqual([25]);
+    expect(keyframeStepsEvery(25, 25, 8)).toEqual([]);
+    expect(keyframeStepsEvery(0, 25, 8)).toEqual([]);
+    const history = buildHistory({ ...EARTH, tectonicAge: 60 }, () => {}, { keyframeInterval: 25, keyframes: 8, coarser: 1 });
+    expect(history.snapshots.map((s) => s.step)).toEqual([25, 50]);
+  });
+
+  it('builds the supercontinent itself at age 0 (M25)', () => {
+    const w = build({ ...EARTH, tectonicAge: 0 }, () => {}, { coarser: 1 });
+    expect(w.steps).toBe(0);
+    expect(w.events).toEqual([]);
+    let finite = true;
+    for (let i = 0; i < w.n; i++) if (!Number.isFinite(w.elevation[i]) || !Number.isFinite(w.temperatureAnnual[i])) finite = false;
+    expect(finite).toBe(true);
+    expect(w.stats.oceanFraction).toBeGreaterThan(0.5);
+    expect(w.stats.oceanFraction).toBeLessThan(0.85);
   });
 
   it('reproduces, at step 50 of a 100-step run, the planet of a 50-step run', () => {

@@ -20,7 +20,7 @@ export interface PlanetParams {
   insolation: number;
   /** Initial number of tectonic plates. */
   plateCount: number;
-  /** Number of tectonic steps to simulate. */
+  /** Steps the plates have moved since the supercontinent began to rift, one per million years (0 to 400). */
   tectonicAge: number;
   /** 0 = interglacial, 1 = glacial maximum. */
   glacialPhase: number;
@@ -60,7 +60,7 @@ export const PARAM_SPECS: ParamSpec[] = [
   { key: 'rotationHours', label: 'Rotation period', min: 4, max: 5000, step: 1, unit: 'h', wiredIn: 4, help: 'Coriolis, number of circulation cells' },
   { key: 'insolation', label: 'Insolation', min: 0.3, max: 2, step: 0.01, unit: 'x Earth', wiredIn: 4, help: 'Global temperature baseline' },
   { key: 'plateCount', label: 'Plates', min: 4, max: 30, step: 1, unit: '', wiredIn: 2, help: 'Initial plate seeds' },
-  { key: 'tectonicAge', label: 'Tectonic age', min: 50, max: 400, step: 10, unit: 'steps', wiredIn: 2, help: 'Loop length: more orogenies, more erosion' },
+  { key: 'tectonicAge', label: 'Age since Pangea', min: 0, max: 400, step: 10, unit: 'million years', wiredIn: 2, help: 'Time the plates have moved since the supercontinent began to rift (one step per million years): more rifts, orogenies and erosion; 0 shows the supercontinent itself; the timeline keeps a frame every 25 million years' },
   { key: 'glacialPhase', label: 'Glacial phase', min: 0, max: 1, step: 0.05, unit: '', wiredIn: 6, help: 'Temperature offset, sea-level drop, ice extent' },
   { key: 'mantleHeat', label: 'Mantle heat', min: 0.3, max: 3, step: 0.1, unit: 'x Earth', wiredIn: 8, help: 'Plate speed, hotspot volcanism, rifting rate' },
   { key: 'greenhouse', label: 'Greenhouse', min: 0.2, max: 5, step: 0.1, unit: 'x Earth', wiredIn: 9, help: 'Longwave trapping: global temperature, ice extent' },
@@ -100,7 +100,9 @@ export const PRESETS: Preset[] = [
   { name: 'Dry world', params: { ...EARTH, waterVolume: 0.3 } },
   { name: 'Half ocean', params: { ...EARTH, oceanFraction: 0.5 } },
   { name: 'Snowball', params: { ...EARTH, insolation: 0.85, glacialPhase: 1 } },
+  { name: 'Pangea', params: { ...EARTH, tectonicAge: 0 } },
   { name: 'Young planet', params: { ...EARTH, tectonicAge: 50 } },
+  { name: 'Old planet', params: { ...EARTH, tectonicAge: 400 } },
   { name: 'Hot mantle', params: { ...EARTH, mantleHeat: 2.5, tectonicAge: 300 } },
   { name: 'Greenhouse', params: { ...EARTH, greenhouse: 3 } },
   { name: 'Thin air', params: { ...EARTH, pressureBar: 0.3 } },

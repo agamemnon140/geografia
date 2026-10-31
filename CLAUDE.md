@@ -107,6 +107,12 @@ every push to `main` of https://github.com/agamemnon140/geografia). Local:
   glacial bridges within 120 m, horizon 100 ka). Layers Habitability,
   Agricultural potential, City sites, Human dispersal; Civilization section
   in Explain; two rows in Statistics; `scripts/diag-civilization.ts [Real]`.
+- M25: the age since Pangea: `tectonicAge` read as million years since the
+  supercontinent began to rift, 0 to 400 (0 is the genesis itself, 3 s; 400
+  steps take 14 s at level 6), presets Pangea and Old planet; timeline
+  keyframes every 25 million years (`keyframeStepsEvery`,
+  `BuildOptions.keyframeInterval`), the interval widening to keep at most
+  eight (every 50 at 400); every label in the app speaks in million years.
 
 ## Where things are
 
@@ -132,7 +138,7 @@ every push to `main` of https://github.com/agamemnon140/geografia). Local:
   `render-globe.ts`, `diag-tectonics.ts`, `diag-climate.ts [Real]`,
   `diag-resources.ts [preset] [seed]`, `convert-etopo5.ts`,
   `convert-paleodem.ts`, `convert-mrds.ts <mrds.csv>`, `make-icons.ts`.
-- `tests/`: 24 files, 132 tests; CI budget for the full build is 60 s.
+- `tests/`: 24 files, 134 tests; CI budget for the full build is 60 s.
   `tests/minerals.test.ts` pins seed 2's ocean fraction, mean land
   elevation, mean temperature and sea level to the M20 values: anything
   that changes the geography fails it on purpose.
@@ -208,8 +214,7 @@ spikes after collisions; past greenhouse not applied to the Earth timeline.
 - Climate biases above (boreal cold, cool deserts, sea ice).
 - Asked by the owner on 2026-10-31, for after M24: (1) choosing the
   planet's age since its Pangea before building, 0 to 400 million years
-  (the Tectonic age parameter exists; check its range and the build time
-  at 400 steps, and let the timeline keyframes follow); (2) composition
+  (done in M25); (2) composition
   parameters that reach minerals, flora and fauna (atmospheric oxygen,
   crustal iron and other abundances, with causal paths like the other
   parameters); (3) an optional fantasy layer, off by default, estimating

@@ -30,8 +30,10 @@ export interface PlateInfo {
 export interface BuildOptions {
   /** Subdivision levels below the planet's own level, for quick previews (DESIGN 8.3). */
   coarser?: number;
-  /** Number of timeline keyframes to capture during the tectonic loop (DESIGN 9.1); 0 for none. */
+  /** Number of timeline keyframes to capture during the tectonic loop (DESIGN 9.1); 0 for none. With `keyframeInterval` it is the most keyframes allowed instead. */
   keyframes?: number;
+  /** Capture a keyframe every this many steps (million years) instead of spacing `keyframes` evenly; the interval doubles, triples, ... until the count fits `keyframes` (M25). */
+  keyframeInterval?: number;
 }
 
 /**
@@ -555,6 +557,20 @@ export function keyframeSteps(tectonicAge: number, keyframes: number): number[] 
   return out;
 }
 
+/**
+ * Steps at which keyframes are captured when a frame is wanted every `interval` steps: the
+ * multiples of the interval below the age. When they would exceed `maxCount`, the interval is
+ * widened to the smallest multiple of itself that fits, so the frames stay at round ages.
+ */
+export function keyframeStepsEvery(tectonicAge: number, interval: number, maxCount: number): number[] {
+  if (interval <= 0 || maxCount <= 0 || tectonicAge <= interval) return [];
+  const inside = Math.ceil(tectonicAge / interval) - 1;
+  const spacing = interval * Math.ceil(inside / maxCount);
+  const out: number[] = [];
+  for (let step = spacing; step < tectonicAge; step += spacing) out.push(step);
+  return out;
+}
+
 export interface History {
   world: World;
   /** Tectonic states captured along the way, oldest first; turn them into worlds with `finalize`. */
@@ -579,7 +595,9 @@ export function buildHistory(input: PlanetParams, onProgress: Progress = () => {
 
   onProgress('tectonics', 0.05);
   const sim = new TectonicsSim(grid, params, rng.fork('tectonics'));
-  const wanted = keyframeSteps(params.tectonicAge, options.keyframes ?? 0);
+  const wanted = options.keyframeInterval
+    ? keyframeStepsEvery(params.tectonicAge, options.keyframeInterval, options.keyframes ?? Infinity)
+    : keyframeSteps(params.tectonicAge, options.keyframes ?? 0);
   const snapshots: ReliefState[] = [];
   // Real precipitation inside the loop (DESIGN 9.1): every IN_LOOP_CLIMATE_INTERVAL steps the
   // climate runs on a coarse grid and its rain and evaporation drive the fluvial passes until

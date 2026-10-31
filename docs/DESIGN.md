@@ -218,7 +218,7 @@ Stored alongside outputs so the inspector can show the causal chain: plateId, cr
 
 ### 3.8 Timeline (phase 2, built in M7)
 
-The tectonic loop is step-able and deterministic, so history is a matter of copying state. During a build, `keyframeSteps` picks evenly spaced steps (eight for an Earth-sized grid, four at level 7); at each one the simulation's per-cell state (elevation, sea level, plate, crust fields, boundaries, plates, hotspots) is copied into a `ReliefState`, about 3 MB at level 6. The final world is finalized and delivered first; the worker then runs `finalize` on every snapshot (hydrology, climate, ice, biomes, statistics, exactly the code path of the final world) and streams the results as keyframes compacted to Float32, roughly 17 MB each at level 6. A keyframe at step t is byte-for-byte the planet a build of tectonic age t would produce, which is the timeline's invariant test. Only the latest full build keeps its history in memory; gallery entries keep their final world.
+The tectonic loop is step-able and deterministic, so history is a matter of copying state. During a build, `keyframeStepsEvery` picks one step every 25 million years (M25; the interval widens to the smallest multiple of 25 that keeps the count within the cap: eight for an Earth-sized grid, four at level 7 or on larger grids, so a 400-million-year planet keeps a frame every 50; `keyframeSteps`, evenly spaced by count, remains for callers that ask for a count); at each one the simulation's per-cell state (elevation, sea level, plate, crust fields, boundaries, plates, hotspots) is copied into a `ReliefState`, about 3 MB at level 6. The final world is finalized and delivered first; the worker then runs `finalize` on every snapshot (hydrology, climate, ice, biomes, statistics, exactly the code path of the final world) and streams the results as keyframes compacted to Float32, roughly 17 MB each at level 6. A keyframe at step t is byte-for-byte the planet a build of tectonic age t would produce, which is the timeline's invariant test. Only the latest full build keeps its history in memory; gallery entries keep their final world.
 
 ### 3.9 The real Earth as a reference (built in M11; its past in M16)
 
@@ -283,14 +283,14 @@ Calibration status after M24 on the real Earth: origin in the West African savan
 | rotation period | hours | Coriolis, number of circulation cells, wind deflection |
 | insolation | relative to Earth | Global temperature baseline |
 | plate count | 4 to 30 | Initial plate seeds |
-| tectonic age | steps (50 to 400) | Loop length: more orogenies, more erosion. One step is about a million years (cells of 110 km, plates at 0.1 to 0.5 cells per step, i.e. 1 to 5 cm per year); the default of 200 is the age of Earth's oldest sea floor, long enough to recycle the ocean floor once and to bring relief into balance between uplift and erosion. It is not the planet's age: the initial 40% of continental crust stands for the earlier billions of years |
+| age since Pangea (`tectonicAge`) | million years (0 to 400), one tectonic step each | Time the plates have moved since the supercontinent began to rift: more rifts, orogenies and erosion, more pieces. One step is about a million years (cells of 110 km, plates at 0.1 to 0.5 cells per step, i.e. 1 to 5 cm per year); 0 shows the supercontinent itself with its first rift open (M25); the default of 200 is Earth's time since Pangea began to break, long enough to recycle the ocean floor once and to bring relief into balance between uplift and erosion; 400 runs the cycle about twice (14 s at level 6). It is not the planet's age: the initial 40% of continental crust stands for the earlier billions of years |
 | glacial phase | 0 to 1 | Temperature offset, sea-level drop, ice extent |
 | mantle heat (phase 2) | relative to Earth (0.3 to 3) | Plate speed, hotspot volcanism, rifting rate |
 | greenhouse (phase 2) | relative to Earth (0.2 to 5) | Longwave trapping: global temperature, ice extent |
 | air pressure (phase 2) | bar (0.1 to 10) | Heat transport to the poles, pressure broadening, seasonal inertia |
 | eccentricity (phase 2) | 0 to 0.3 | Unequal seasons between hemispheres |
 
-Presets: Earth, Super-Earth, Slow rotator, High tilt, Waterworld, Dry world, Snowball, Young planet.
+Presets: Earth, Super-Earth, Slow rotator, High tilt, Waterworld, Dry world, Half ocean, Snowball, Pangea (age 0), Young planet (50), Old planet (400), Hot mantle, Greenhouse, Thin air, Eccentric orbit.
 
 ## 5. Architecture
 
@@ -374,6 +374,10 @@ Phase 3 (section 9.2) and the first slice of phase 4 (9.3), after a climate link
 - M23: fauna (3.12): eight ancestral lineages carried on the crust parcels and diffused along the land at every fluvial pass, never across the sea; realms, endemism, richness and megafauna on the final relief; Faunal realms, Endemism, Species richness and Megafauna layers.
 - M24: civilization, first slice (3.13): habitability, agricultural potential, an itemized city-site score with thirty candidate cities, and human dispersal from an origin chosen by rule over land, coasts and straits with glacial bridges; Habitability, Agricultural potential, City sites and Human dispersal layers.
 
+The owner's queue after M24:
+
+- M25: the age since Pangea (section 4, 3.8): the tectonic age read as million years since the supercontinent began to rift, 0 to 400, with the Pangea and Old planet presets; timeline keyframes every 25 million years, the interval widening to keep at most eight; every label in the app speaks in million years.
+
 ## 8. User interface
 
 The UI exists to expose causality, not to decorate. Every number on screen has a path back to a parameter or a process, and every layer is a field the simulator actually computed.
@@ -404,6 +408,7 @@ The UI exists to expose causality, not to decorate. Every number on screen has a
 | M23 | Faunal realms (eight named by their colors, paler where mixed), Endemism, Species richness and Megafauna layers; a Fauna section in the explain drawer with the lineage shares, the landmass area and what it supports; a Faunal realms row in the statistics; the Model view's fauna chapter |
 | M24 | Civilization group: Habitability, Agricultural potential, City sites (white dots numbered best first on the map and the globe) and Human dispersal (arrival in thousands of years, the origin as a yellow dot, unreached land gray); a Civilization section in the explain drawer with every term; Candidate cities and Human dispersal rows in the statistics; the Model view's civilization chapter |
 | M21 | "Beyond geography" checkbox (off by default, remembered per browser and as `beyond=1` in the link) revealing a second layer dropdown with Resources (deposits of all minerals; one potential layer per mineral with its deposits as dots), a Resources section in the explain drawer and a Deposits row in the statistics; a one-column layout under 820 px with the map first, larger touch targets and two-finger pinch zoom on the map; the Model view's Resources chapter |
+| M25 | Age since Pangea parameter (0 to 400 million years) with the Pangea and Old planet presets; the timeline label, the statistics row, the Compare options and the exported strip speak in million years since Pangea began to break; keyframes every 25 million years |
 
 ### 8.6 Beyond geography (M21)
 

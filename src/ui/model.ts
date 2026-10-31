@@ -12,7 +12,7 @@ Every map here is the output of a chain of physical links: plate tectonics build
 
 ## 1. The grid and time
 
-The planet is a subdivided icosahedron: 40,962 cells of about 112 km for an Earth-sized planet (level 6), 163,842 cells of 55 km with the Fine grid option (level 7). Fields live on the cells; the renderer interpolates them per pixel. One tectonic step is one million years, and the default history of 200 steps is the time since Pangea began to break. Every constant written "per cell" means a reference cell of 112 km, converted to the grid in use, so the fine grid gives the same planet in kilometers, only sharper.
+The planet is a subdivided icosahedron: 40,962 cells of about 112 km for an Earth-sized planet (level 6), 163,842 cells of 55 km with the Fine grid option (level 7). Fields live on the cells; the renderer interpolates them per pixel. One tectonic step is one million years. The Age since Pangea parameter (0 to 400 million years) sets how long the plates have moved since the supercontinent began to rift: 0 shows the supercontinent itself with its first rift open, the default of 200 is the Earth's time since Pangea began to break, and 400 runs the cycle of rifts, failures, arcs and dockings about twice over (a build takes 3 s at 0 and 14 s at 400). The timeline keeps a frame every 25 million years, every 50 when the age needs more than eight frames. Every constant written "per cell" means a reference cell of 112 km, converted to the grid in use, so the fine grid gives the same planet in kilometers, only sharper.
 
 ## 2. Tectonics
 

@@ -22,7 +22,8 @@ const GALLERY_SIZE = 6;
 const PREVIEW_DEBOUNCE_MS = 500;
 /** localStorage key of the "Beyond geography" toggle. */
 const BEYOND_KEY = 'geografia.beyond';
-/** Timeline keyframes requested per full build; fewer on the largest grids to bound memory. */
+/** Timeline keyframes: one every KEYFRAME_INTERVAL_MA million years, at most KEYFRAMES per full build (fewer on the largest grids to bound memory); the interval widens when the age needs more (M25). */
+const KEYFRAME_INTERVAL_MA = 25;
 const KEYFRAMES = 8;
 const KEYFRAMES_LARGE_GRID = 4;
 /** Milliseconds per keyframe when the history plays. */
@@ -239,7 +240,7 @@ export function mountApp(root: HTMLElement): void {
     const k = s.koppen;
     return [
       ['Grid level', `${w.level} (${w.n.toLocaleString()} cells)${w.preview ? ', preview' : ''}${w.reference ? `, relief from ${w.reference}` : ''}`],
-      ['Tectonic step', w.reference ? 'measured relief, no tectonic history' : `${w.steps} of ${w.params.tectonicAge}`],
+      ['Age since Pangea', w.reference ? 'measured relief, no tectonic history' : `${w.steps} of ${w.params.tectonicAge} million years (one tectonic step per million years)`],
       ['Active plates', `${s.activePlates} of ${w.plates.length} ever (${w.params.plateCount} at the start)`],
       ['Plate events', `${w.events.filter((e) => e.type === 'rift').length} rifts (${w.events.filter((e) => e.type === 'fail').length} failed), ${w.events.filter((e) => e.type === 'merge').length} mergers, ${w.events.filter((e) => e.type === 'rollback').length} back-arc basins, ${w.events.filter((e) => e.type === 'capture').length} coastal slivers`],
       ['Ocean / land', `${pct(s.oceanFraction)} / ${pct(s.landFraction)}`],
@@ -296,12 +297,20 @@ export function mountApp(root: HTMLElement): void {
       .join('');
   };
 
+  /** Where a world stands in time: million years since Pangea began to break, or, for the real Earth, million years ago. */
+  const ageLabel = (w: World): string =>
+    w.reference
+      ? w.steps >= w.params.tectonicAge
+        ? `the present (${w.reference})`
+        : `${w.params.tectonicAge - w.steps} million years ago (${w.reference})`
+      : `${w.steps} of ${w.params.tectonicAge} million years since Pangea began to break`;
+
   const worldTitle = (w: World): string =>
     w.reference
       ? w.steps >= w.params.tectonicAge
         ? `real Earth (${w.reference})`
         : `the Earth ${w.params.tectonicAge - w.steps} million years ago (${w.reference})`
-      : `seed ${w.params.seed}, step ${w.steps} of ${w.params.tectonicAge}${w.preview ? ' (preview)' : ''}`;
+      : `seed ${w.params.seed}, ${w.steps} of ${w.params.tectonicAge} million years since Pangea${w.preview ? ' (preview)' : ''}`;
 
   /** Paint `world` into the views that are on screen; the others catch up when shown. */
   const paintViews = (): void => {
@@ -348,12 +357,12 @@ export function mountApp(root: HTMLElement): void {
   const renderCompareOptions = (): void => {
     const options: string[] = [];
     if (current) {
-      current.keyframes.forEach((k, i) => options.push(`<option value="k:${i}">${k.reference ? `the Earth, ${k.params.tectonicAge - k.steps} million years ago` : `this planet, step ${k.steps}`}</option>`));
-      options.push(`<option value="k:final">this planet, final (step ${current.world.steps})</option>`);
+      current.keyframes.forEach((k, i) => options.push(`<option value="k:${i}">${k.reference ? `the Earth, ${k.params.tectonicAge - k.steps} million years ago` : `this planet, ${k.steps} million years after Pangea`}</option>`));
+      options.push(`<option value="k:final">this planet, final (${current.world.steps} million years)</option>`);
     }
     entries.forEach((e, i) => {
       if (e === current) return;
-      options.push(`<option value="g:${i}">${e.world.reference ? 'real Earth' : `seed ${e.world.params.seed}, final (step ${e.world.steps})`}</option>`);
+      options.push(`<option value="g:${i}">${e.world.reference ? 'real Earth' : `seed ${e.world.params.seed}, final (${e.world.steps} million years)`}</option>`);
     });
     const previous = compareSelect.value;
     compareSelect.innerHTML = options.join('');
@@ -414,11 +423,7 @@ export function mountApp(root: HTMLElement): void {
     timeline.max = String(total);
     const position = Number(timeline.value);
     const shown = position >= total ? current.world : current.keyframes[position];
-    timelineLabel.textContent = shown.reference
-      ? shown.steps >= shown.params.tectonicAge
-        ? `the present (${shown.reference})`
-        : `${shown.params.tectonicAge - shown.steps} million years ago (${shown.reference})`
-      : `step ${shown.steps} of ${shown.params.tectonicAge} (about ${shown.steps} million years)`;
+    timelineLabel.textContent = ageLabel(shown);
   };
 
   const showTimelinePosition = (): void => {
@@ -529,7 +534,7 @@ export function mountApp(root: HTMLElement): void {
         },
       }, mode === 'preview'
         ? { coarser: 1 }
-        : { keyframes: levelIsLarge(params) || fineGrid.checked ? KEYFRAMES_LARGE_GRID : KEYFRAMES, coarser: fineGrid.checked ? -1 : 0 });
+        : { keyframeInterval: KEYFRAME_INTERVAL_MA, keyframes: levelIsLarge(params) || fineGrid.checked ? KEYFRAMES_LARGE_GRID : KEYFRAMES, coarser: fineGrid.checked ? -1 : 0 });
       if (mode === 'full') {
         entry = addToGallery(result.world);
         current = entry;
@@ -670,7 +675,7 @@ export function mountApp(root: HTMLElement): void {
       ctx.putImageData(image, x, y);
       ctx.fillStyle = '#e6e6e6';
       ctx.font = '13px system-ui, sans-serif';
-      ctx.fillText(`step ${w.steps} of ${w.params.tectonicAge} · ${layer.name}${layer.seasonal ? ` (${sampleName(sample)})` : ''}`, x + 6, y + STRIP_FRAME_H + 15);
+      ctx.fillText(`${ageLabel(w)} · ${layer.name}${layer.seasonal ? ` (${sampleName(sample)})` : ''}`, x + 6, y + STRIP_FRAME_H + 15);
     });
     sheet.toBlob((blob) => {
       if (blob) download(blob, `geografia-${current?.world.params.seed}-history-${layer.id}.png`);
