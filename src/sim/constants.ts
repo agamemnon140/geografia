@@ -32,3 +32,11 @@ export function cellCount(level: number): number {
 
 /** Target cell area: Earth surface divided by the Earth-level cell count (~12,450 km^2). */
 export const EARTH_CELL_AREA_KM2 = EARTH_SURFACE_KM2 / cellCount(EARTH_LEVEL);
+
+/**
+ * The reference cell (M18): the side of an Earth-level cell, about 112 km.
+ * Tectonic constants written "in cells" mean reference cells, and every
+ * simulation converts them to its own grid, so a finer grid or a bigger
+ * planet gets the same planet in kilometers, not a different one.
+ */
+export const REFERENCE_CELL_KM = Math.sqrt(EARTH_CELL_AREA_KM2);

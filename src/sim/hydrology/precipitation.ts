@@ -24,8 +24,22 @@ const ZONAL_PROFILE: [number, number][] = [
 export const INTERIOR_FLOOR = 0.25;
 /** Hop distance to the ocean at which the excess over the floor has decayed by e. */
 export const OCEAN_DECAY_CELLS = 7;
-/** Share of precipitation over land that reaches rivers (Earth: 0.35 to 0.4). */
-export const RUNOFF_COEFFICIENT = 0.4;
+/**
+ * Shape of the Budyko curve in Fu's form (M18): the share of precipitation
+ * that evaporates is 1 + phi - (1 + phi^w)^(1/w), with phi the ratio of
+ * potential evaporation to precipitation. Catchments fit w near 2.6 with
+ * land potential evaporation; with the open-water potential the climate
+ * provides, w = 2 gives Earth's land-mean runoff share of about 0.35 to 0.4,
+ * half of the rain in the Amazon and a few percent in deserts.
+ */
+export const BUDYKO_OMEGA = 2;
+
+/** Share of precipitation that runs off, from precipitation and potential evaporation in the same units. */
+export function runoffFraction(precipitation: number, potentialEvaporation: number): number {
+  if (precipitation <= 0) return 0;
+  const phi = Math.max(0, potentialEvaporation) / precipitation;
+  return Math.max(0, Math.min(1, (1 + phi ** BUDYKO_OMEGA) ** (1 / BUDYKO_OMEGA) - phi));
+}
 /** Potential evaporation of a lake at the equator, mm per year. */
 export const EVAPORATION_EQUATOR_MM = 2000;
 /** Potential evaporation never falls below this fraction of the equatorial value. */

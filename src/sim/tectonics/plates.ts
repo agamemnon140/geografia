@@ -40,8 +40,9 @@ export function rotatePlates(plates: Plate[]): void {
  * a continental collision regains motion over a few hundred steps as if new
  * subduction had started elsewhere.
  */
-export function perturbPlates(plates: Plate[], rng: Rng, cellAngle: number, speed = 1): void {
-  const typical = cellAngle * 0.3 * speed;
+export function perturbPlates(plates: Plate[], rng: Rng, unitAngle: number, speed = 1): void {
+  // unitAngle: the angle of one reference cell (about 112 km) on this planet.
+  const typical = unitAngle * 0.3 * speed;
   for (const p of plates) {
     const [dx, dy, dz] = randomUnit(rng);
     // A smaller kick than before M13: slab pull now steers plates, the walk only adds variety.
@@ -50,7 +51,7 @@ export function perturbPlates(plates: Plate[], rng: Rng, cellAngle: number, spee
     // beat the collision brake except along long sutures, or every plate ends up locked.
     const walked = p.rate * rng.range(0.85, 1.15);
     const relaxed = walked + SPEED_RELAXATION * (typical - walked);
-    p.rate = Math.min(cellAngle * 0.45 * speed, Math.max(cellAngle * 0.05, relaxed));
+    p.rate = Math.min(unitAngle * 0.45 * speed, Math.max(unitAngle * 0.05, relaxed));
   }
 }
 

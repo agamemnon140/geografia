@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Grid, cellAreasKm2 } from '../src/sim/grid/grid.ts';
-import { RUNOFF_COEFFICIENT } from '../src/sim/hydrology/precipitation.ts';
+import { evaporationRate } from '../src/sim/climate/moisture.ts';
+import { runoffFraction } from '../src/sim/hydrology/precipitation.ts';
 import { Hydrology } from '../src/sim/hydrology/routing.ts';
 import { EARTH } from '../src/sim/params.ts';
 import { build, type World } from '../src/sim/pipeline.ts';
@@ -53,7 +54,7 @@ describe('hydrology with the Earth preset', () => {
         const d = w.downstream[i];
         if (d >= 0) expect(w.discharge[d]).toBeGreaterThanOrEqual(w.discharge[i]);
         else delivered += w.discharge[i];
-        if (isLand(w, i)) runoff += w.precipitation[i] * 1e-6 * RUNOFF_COEFFICIENT * areas[i];
+        if (isLand(w, i)) runoff += w.precipitation[i] * runoffFraction(w.precipitation[i], evaporationRate(w.temperatureAnnual[i])) * 1e-6 * areas[i];
       }
       expect(delivered).toBeCloseTo(runoff, 6);
     }

@@ -30,7 +30,9 @@ currents, sstAnomaly, plates, crustAge, thickness, cells.
 - Pick a preset or edit the parameters (ten physical ones plus mantle heat,
   greenhouse, air pressure, eccentricity and a target ocean cover); every
   edit rebuilds a coarse preview in under two seconds (toggle), Build planet
-  runs the full grid.
+  runs the full grid. The Fine grid option builds on cells of 55 km instead
+  of 110 (four times as many, several times slower) and gives the same
+  planet in kilometers with sharper coasts.
 - Layers with a month slider for the seasonal ones; click a cell for the
   explain drawer, which itemizes where its elevation, water, temperature and
   biome come from.

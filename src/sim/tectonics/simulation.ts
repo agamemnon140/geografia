@@ -3,6 +3,7 @@ import { nearestCell } from '../grid/locate.ts';
 import { Hydrology } from '../hydrology/routing.ts';
 import { solveSeaLevel, solveSeaLevelForFraction } from '../hypsometry.ts';
 import { relativeGravity, waterVolumeKm3, type PlanetParams } from '../params.ts';
+import { REFERENCE_CELL_KM } from '../constants.ts';
 import { Noise3D } from '../rng/noise.ts';
 import type { Rng } from '../rng/xoshiro.ts';
 import {
@@ -123,7 +124,32 @@ export class TectonicsSim {
   /** Target ocean cover; 0 lets the water volume set the sea level. */
   readonly targetOceanFraction: number;
   readonly cap: number;
+  /** Angle of one grid cell, radians. */
   readonly cellAngle: number;
+  /** Angle of one reference cell (about 112 km) on this planet: speeds in "cells per step" are in these. */
+  readonly unitAngle: number;
+  /** Grid cells per reference cell: 1 on Earth's grid, 2 on the fine grid. */
+  readonly cellsPerUnit: number;
+  /** Side of a grid cell, km. */
+  readonly cellKm: number;
+  /** Hop radii and counts converted to this grid (M18). */
+  private readonly arcRadius: number;
+  private readonly andeanRadius: number;
+  private readonly rollbackWidth: number;
+  private readonly sliverWidth: number;
+  private readonly mergeMinSuture: number;
+  private readonly rollbackMinTrench: number;
+  private readonly rollbackMinCells: number;
+  private readonly sliverMinLength: number;
+  private readonly collisionSaturation: number;
+  private readonly slabPullSaturation: number;
+  private readonly slabBreakoff: number;
+  /** Per-cell rates converted so fluxes per kilometer and per cell area stay the same on every grid. */
+  private readonly arcRate: number;
+  private readonly hotspotRadius: number;
+  private readonly hotspotRate: number;
+  private readonly crustDiffusion: number;
+  private readonly flowRate: number;
   /** Mantle heat flux relative to Earth, and the plate speed factor derived from it. */
   readonly heat: number;
   readonly speed: number;
@@ -146,6 +172,8 @@ export class TectonicsSim {
   private lastMarginEvent: number[] = [];
   private pullSum = new Float64Array(0);
   private pullCells = new Int32Array(0);
+  /** Resampling pass in which each parcel arrived in its current frame, to tell aliasing from true overlap. */
+  private arrivalStamp = new Int32Array(0);
   private eventRng: Rng;
   private totalAreaKm2 = 0;
 
@@ -178,6 +206,36 @@ export class TectonicsSim {
     this.grid = grid;
     const n = grid.n;
     this.cellAngle = Math.sqrt((4 * Math.PI) / n);
+    this.cellKm = params.radiusKm * this.cellAngle;
+    this.unitAngle = REFERENCE_CELL_KM / params.radiusKm;
+    this.cellsPerUnit = REFERENCE_CELL_KM / this.cellKm;
+    const cells = (units: number): number => Math.max(1, Math.round(units * this.cellsPerUnit));
+    const footprint = (radius: number): number => 1 + 3 * radius * (radius + 1);
+    this.arcRadius = cells(ARC_RADIUS);
+    this.andeanRadius = cells(ANDEAN_RADIUS);
+    this.rollbackWidth = cells(ROLLBACK_WIDTH);
+    this.sliverWidth = cells(SLIVER_WIDTH);
+    this.mergeMinSuture = cells(MERGE_MIN_SUTURE);
+    this.rollbackMinTrench = cells(ROLLBACK_MIN_TRENCH);
+    this.rollbackMinCells = Math.max(1, Math.round(ROLLBACK_MIN_CELLS * this.cellsPerUnit * this.cellsPerUnit));
+    this.sliverMinLength = cells(SLIVER_MIN_LENGTH);
+    this.collisionSaturation = cells(COLLISION_SATURATION_CELLS);
+    this.slabPullSaturation = cells(SLAB_PULL_SATURATION_CELLS);
+    this.slabBreakoff = cells(SLAB_BREAKOFF_CELLS);
+    // Arc magma per event spread over the footprint: the same volume per kilometer of trench on any grid.
+    this.arcRate = (ARC_RATE_KM * footprint(ARC_RADIUS)) / footprint(this.arcRadius);
+    // A hotspot feeds one reference cell's area per step, spread over the grid cells that cover it.
+    this.hotspotRadius = cells(1) - 1;
+    this.hotspotRate = (HOTSPOT_RATE_KM * this.cellsPerUnit * this.cellsPerUnit) / footprint(this.hotspotRadius);
+    // Explicit diffusion and flow scale with the inverse square of the cell size, within stability.
+    this.crustDiffusion = Math.min(0.12, CRUST_DIFFUSION * this.cellsPerUnit * this.cellsPerUnit);
+    this.flowRate = Math.min(0.15, FLOW_RATE * this.cellsPerUnit * this.cellsPerUnit);
+    if (this.arcQueue.length < 4 * footprint(Math.max(this.arcRadius, this.andeanRadius, this.hotspotRadius) + 1)) {
+      const size = 4 * footprint(Math.max(this.arcRadius, this.andeanRadius, this.hotspotRadius) + 1);
+      this.arcQueue = new Int32Array(size);
+      this.arcDist = new Int32Array(size);
+      this.andeanFound = new Int32Array(size);
+    }
     this.areaKm2 = cellAreasKm2(grid, params.radiusKm);
     this.hydrology = new Hydrology(grid, this.areaKm2, params.radiusKm);
     this.waterKm3 = waterVolumeKm3(params);
@@ -191,7 +249,7 @@ export class TectonicsSim {
 
     const count = params.plateCount;
     // The initial condition: a rifted supercontinent and weighted Voronoi plates (tectonics/genesis.ts).
-    const start = genesis(grid, count, rng.fork('genesis'), this.cellAngle, this.speed);
+    const start = genesis(grid, count, rng.fork('genesis'), this.unitAngle, this.cellsPerUnit, this.speed);
     this.plates = start.plates;
     for (let p = 0; p < count; p++) {
       this.slowSteps.push(0);
@@ -276,7 +334,7 @@ export class TectonicsSim {
     this.step++;
     this.slabPull();
     this.brakeCollisions();
-    if (this.step % POLE_WALK_INTERVAL === 0) perturbPlates(this.plates, this.poleRng, this.cellAngle, this.speed);
+    if (this.step % POLE_WALK_INTERVAL === 0) perturbPlates(this.plates, this.poleRng, this.unitAngle, this.speed);
     this.trackSpeeds();
     if (this.step % PLATE_EVENT_INTERVAL === 0) {
       this.evolvePlates();
@@ -339,10 +397,10 @@ export class TectonicsSim {
     for (let p = 0; p < count; p++) {
       if (cells[p] === 0 || this.dead[p]) continue;
       // Slab break-off: a continent in the trench detaches the slab; the pull is gone.
-      if (this.collisionCells[p] >= SLAB_BREAKOFF_CELLS) continue;
+      if (this.collisionCells[p] >= this.slabBreakoff) continue;
       const len = Math.hypot(sum[3 * p], sum[3 * p + 1], sum[3 * p + 2]);
       if (len < 1e-12) continue;
-      const speed = SLAB_PULL_SPEED_CELLS * this.cellAngle * this.speed * Math.min(1, cells[p] / SLAB_PULL_SATURATION_CELLS);
+      const speed = SLAB_PULL_SPEED_CELLS * this.unitAngle * this.speed * Math.min(1, cells[p] / this.slabPullSaturation);
       const [ex, ey, ez] = eulerVector(plates[p]);
       const k = SLAB_PULL_RATE;
       setEulerVector(
@@ -359,13 +417,13 @@ export class TectonicsSim {
     for (let p = 0; p < this.plates.length; p++) {
       const cells = this.collisionCells[p];
       if (cells === 0) continue;
-      this.plates[p].rate *= COLLISION_BRAKE ** Math.min(1, cells / COLLISION_SATURATION_CELLS);
+      this.plates[p].rate *= COLLISION_BRAKE ** Math.min(1, cells / this.collisionSaturation);
       this.collisionCells[p] = 0;
     }
   }
 
   private trackSpeeds(): void {
-    const locked = SLOW_RATE_CELLS * this.cellAngle;
+    const locked = SLOW_RATE_CELLS * this.unitAngle;
     for (let p = 0; p < this.plates.length; p++) {
       this.slowSteps[p] = this.plates[p].rate < locked ? this.slowSteps[p] + 1 : 0;
     }
@@ -392,7 +450,7 @@ export class TectonicsSim {
     for (let a = 0; a < plates.length; a++) {
       if (this.dead[a] || this.slowSteps[a] < MERGE_LOCK_STEPS) continue;
       const [b, suture] = this.longestSuture(a);
-      if (b >= 0 && suture >= MERGE_MIN_SUTURE) this.merge(a, b);
+      if (b >= 0 && suture >= this.mergeMinSuture) this.merge(a, b);
     }
     const minArea = RIFT_MIN_CONTINENT_FRACTION * this.totalAreaKm2;
     const superArea = SUPERCONTINENT_FRACTION * this.totalAreaKm2;
@@ -410,11 +468,11 @@ export class TectonicsSim {
     for (let p = 0; p < count && this.plates.length < MAX_PLATES; p++) {
       if (this.dead[p] || this.step - this.lastMarginEvent[p] < MARGIN_EVENT_LOCK_STEPS) continue;
       const trench = this.findRollback(p);
-      if (trench && trench.cells.length >= ROLLBACK_MIN_TRENCH && trench.meanAge >= ROLLBACK_MIN_AGE && this.eventRng.float() < ROLLBACK_PROBABILITY) {
+      if (trench && trench.cells.length >= this.rollbackMinTrench && trench.meanAge >= ROLLBACK_MIN_AGE && this.eventRng.float() < ROLLBACK_PROBABILITY) {
         if (this.rollback(p, trench.cells) >= 0) continue;
       }
       const coast = this.findSliver(p);
-      if (coast && coast.cells.length >= SLIVER_MIN_LENGTH && this.eventRng.float() < SLIVER_PROBABILITY) this.capture(p, coast.other, coast.cells);
+      if (coast && coast.cells.length >= this.sliverMinLength && this.eventRng.float() < SLIVER_PROBABILITY) this.capture(p, coast.other, coast.cells);
     }
   }
 
@@ -489,7 +547,7 @@ export class TectonicsSim {
       frontier.push(j);
       taken.push(j);
     }
-    for (let d = 1; d < ROLLBACK_WIDTH && frontier.length > 0; d++) {
+    for (let d = 1; d < this.rollbackWidth && frontier.length > 0; d++) {
       const next: number[] = [];
       for (const j of frontier) {
         for (let t = grid.nbStart[j]; t < grid.nbStart[j + 1]; t++) {
@@ -504,7 +562,7 @@ export class TectonicsSim {
       }
       frontier = next;
     }
-    if (taken.length < ROLLBACK_MIN_CELLS) return -1;
+    if (taken.length < this.rollbackMinCells) return -1;
     const parent = this.plates[p];
     const id = this.newPlate(parent);
     const parentIndex = pool.frameIndex[p];
@@ -579,7 +637,7 @@ export class TectonicsSim {
     const nlen = Math.hypot(nx, ny, nz);
     const sinHF = Math.hypot(h[1] * f[2] - h[2] * f[1], h[2] * f[0] - h[0] * f[2], h[0] * f[1] - h[1] * f[0]);
     if (nlen > 1e-9 && sinHF > 1e-6) {
-      const speed = this.cellAngle * this.speed * this.eventRng.range(ROLLBACK_RATE_CELLS[0], ROLLBACK_RATE_CELLS[1]);
+      const speed = this.unitAngle * this.speed * this.eventRng.range(ROLLBACK_RATE_CELLS[0], ROLLBACK_RATE_CELLS[1]);
       let rate = speed / sinHF;
       // Velocity of the far end under omega = rate * h is rate * (h x f); flip if it points inward.
       const vx = h[1] * f[2] - h[2] * f[1];
@@ -666,7 +724,7 @@ export class TectonicsSim {
       frontier.push(j);
       taken.push(j);
     }
-    for (let d = 1; d < SLIVER_WIDTH && frontier.length > 0; d++) {
+    for (let d = 1; d < this.sliverWidth && frontier.length > 0; d++) {
       const next: number[] = [];
       for (const j of frontier) {
         for (let t = grid.nbStart[j]; t < grid.nbStart[j + 1]; t++) {
@@ -680,8 +738,8 @@ export class TectonicsSim {
       frontier = next;
     }
     const indexP = pool.frameIndex[p];
-    const indexQ = pool.frameIndex[other];
     const rq = this.plates[other].rotation;
+    const arrival = ++this.stampCounter;
     let moved = 0;
     for (const j of taken) {
       const i = claim[j];
@@ -690,17 +748,7 @@ export class TectonicsSim {
       applyTranspose(rq, xyz[3 * j], xyz[3 * j + 1], xyz[3 * j + 2], tmp, 0);
       const kq = nearestCell(grid, tmp[0], tmp[1], tmp[2], j);
       indexP[pool.frameCell[i]] = -1;
-      const existing = indexQ[kq];
-      if (existing >= 0 && pool.alive[existing]) {
-        this.fuse(existing, i);
-        pool.plate[i] = other;
-        pool.frameCell[i] = kq;
-        pool.release(i);
-      } else {
-        pool.plate[i] = other;
-        pool.frameCell[i] = kq;
-        indexQ[kq] = i;
-      }
+      this.placeInFrame(i, other, kq, arrival);
       moved++;
     }
     if (moved === 0) return 0;
@@ -845,7 +893,7 @@ export class TectonicsSim {
     // Relative Euler vector in the mantle frame, signed so the child moves away from the circle.
     const tmp = this.tmp;
     apply(parent.rotation, px, py, pz, tmp, 0);
-    const rate = RIFT_RATE_CELLS * this.cellAngle * this.speed;
+    const rate = RIFT_RATE_CELLS * this.unitAngle * this.speed;
     let ox = tmp[0] * rate;
     let oy = tmp[1] * rate;
     let oz = tmp[2] * rate;
@@ -883,9 +931,9 @@ export class TectonicsSim {
     const xyz = grid.xyz;
     const tmp = this.tmp;
     const indexA = pool.frameIndex[a];
-    const indexB = pool.frameIndex[b];
     const ra = this.plates[a].rotation;
     const rb = this.plates[b].rotation;
+    const stamp = ++this.stampCounter;
     for (let i = 0; i < pool.count; i++) {
       if (!pool.alive[i] || pool.plate[i] !== a) continue;
       const k = pool.frameCell[i];
@@ -893,22 +941,74 @@ export class TectonicsSim {
       applyTranspose(rb, tmp[0], tmp[1], tmp[2], tmp, 3);
       const kb = nearestCell(grid, tmp[3], tmp[4], tmp[5], pool.lastWorld[i]);
       indexA[k] = -1;
-      const existing = indexB[kb];
-      if (existing >= 0 && pool.alive[existing]) {
-        this.fuse(existing, i);
-        pool.plate[i] = b;
-        pool.frameCell[i] = kb;
-        pool.release(i);
-      } else {
-        pool.plate[i] = b;
-        pool.frameCell[i] = kb;
-        indexB[kb] = i;
-      }
+      this.placeInFrame(i, b, kb, stamp);
     }
     this.dead[a] = true;
     this.slowSteps[a] = 0;
     this.slowSteps[b] = 0;
     this.events.push({ step: this.step, type: 'merge', plate: a, other: b });
+  }
+
+  /**
+   * Put parcel i, resampled from another plate, on frame cell k of plate q.
+   * Two parcels of the same source often land on one target cell (the two
+   * lattices never line up), so a parcel that finds the cell taken by one
+   * that arrived in the same resampling moves to the nearest free cell
+   * within two rings instead of stacking on it: stacking doubled the crust
+   * and left a field of 5 km peaks after every merger (M18). Only a cell held
+   * by a parcel the target plate already had, a true overlap, fuses.
+   */
+  private placeInFrame(i: number, q: number, k: number, stamp: number): void {
+    const pool = this.pool;
+    const grid = this.grid;
+    const index = pool.frameIndex[q];
+    let target = k;
+    const existing = index[k];
+    // Any taken cell: look for a free one nearby first; stacking is the last resort (a true overlap
+    // with the target plate's own crust, nowhere else to go).
+    if (existing >= 0 && pool.alive[existing]) {
+      target = -1;
+      let best = Infinity;
+      const kx = grid.xyz[3 * k];
+      const ky = grid.xyz[3 * k + 1];
+      const kz = grid.xyz[3 * k + 2];
+      for (let t = grid.nbStart[k]; t < grid.nbStart[k + 1] && target < 0; t++) {
+        const nb = grid.nb[t];
+        if (index[nb] < 0 || !pool.alive[index[nb]]) target = nb;
+      }
+      if (target < 0) {
+        for (let t = grid.nbStart[k]; t < grid.nbStart[k + 1]; t++) {
+          const ring = grid.nb[t];
+          for (let u = grid.nbStart[ring]; u < grid.nbStart[ring + 1]; u++) {
+            const nb = grid.nb[u];
+            if (index[nb] >= 0 && pool.alive[index[nb]]) continue;
+            const d = (grid.xyz[3 * nb] - kx) ** 2 + (grid.xyz[3 * nb + 1] - ky) ** 2 + (grid.xyz[3 * nb + 2] - kz) ** 2;
+            if (d < best) {
+              best = d;
+              target = nb;
+            }
+          }
+        }
+      }
+      if (target < 0) target = k;
+    }
+    const holder = index[target];
+    if (holder >= 0 && pool.alive[holder]) {
+      this.fuse(holder, i);
+      pool.plate[i] = q;
+      pool.frameCell[i] = target;
+      pool.release(i);
+      return;
+    }
+    pool.plate[i] = q;
+    pool.frameCell[i] = target;
+    index[target] = i;
+    if (this.arrivalStamp.length < pool.capacity) {
+      const grown = new Int32Array(pool.capacity);
+      grown.set(this.arrivalStamp);
+      this.arrivalStamp = grown;
+    }
+    this.arrivalStamp[i] = stamp;
   }
 
   /** Fold parcel `gone` into parcel `keep` (same frame cell after a merger). */
@@ -1218,7 +1318,7 @@ export class TectonicsSim {
         this.andeanFound[found++] = id;
         if (found >= this.andeanFound.length) break;
       }
-      if (d >= ANDEAN_RADIUS) continue;
+      if (d >= this.andeanRadius) continue;
       for (let t = grid.nbStart[k]; t < grid.nbStart[k + 1]; t++) {
         const nb = grid.nb[t];
         if (st[nb] === stamp || tail >= q.length) continue;
@@ -1257,10 +1357,10 @@ export class TectonicsSim {
       const d = dist[head++];
       const id = index[k];
       if (id >= 0 && pool.alive[id] && pool.volcanic[id] < VOLCANIC_CAP_KM) {
-        pool.volcanic[id] += ARC_RATE_KM;
+        pool.volcanic[id] += this.arcRate;
         if (pool.crustType[id] === OCEANIC && pool.volcanic[id] >= ARC_ACCRETION_KM) this.accreteArc(id);
       }
-      if (d >= ARC_RADIUS) continue;
+      if (d >= this.arcRadius) continue;
       for (let t = grid.nbStart[k]; t < grid.nbStart[k + 1]; t++) {
         const nb = grid.nb[t];
         if (st[nb] === stamp || tail >= q.length) continue;
@@ -1494,7 +1594,7 @@ export class TectonicsSim {
         if (b === i || pool.crustType[b] !== CONTINENTAL) continue;
         sum += pool.thickness[b] - pool.thickness[i];
       }
-      delta[j] = CRUST_DIFFUSION * sum;
+      delta[j] = this.crustDiffusion * sum;
     }
     for (let j = 0; j < grid.n; j++) {
       if (delta[j] !== 0) pool.thickness[claim[j]] += delta[j];
@@ -1677,7 +1777,7 @@ export class TectonicsSim {
         if (b < 0 || !pool.alive[b] || pool.crustType[b] !== CONTINENTAL) continue;
         const diff = ti - pool.thickness[b];
         if (diff <= 0) continue;
-        const f = FLOW_RATE * diff;
+        const f = this.flowRate * diff;
         fd[i] -= f;
         fd[b] += f;
       }
@@ -1692,9 +1792,33 @@ export class TectonicsSim {
 
   private applyHotspots(): void {
     const pool = this.pool;
+    const grid = this.grid;
+    const claim = this.wParcel;
+    const stamp = ++this.stampCounter;
+    const st = this.stamp;
+    const q = this.arcQueue;
+    const dist = this.arcDist;
     for (let h = 0; h < this.hotspots.length; h++) {
-      const i = this.wParcel[this.hotspots[h]];
-      if (pool.volcanic[i] < VOLCANIC_CAP_KM) pool.volcanic[i] += HOTSPOT_RATE_KM * this.heat;
+      // The plume feeds the world cells within hotspotRadius of the hotspot (one reference cell's area).
+      let head = 0;
+      let tail = 0;
+      q[tail] = this.hotspots[h];
+      dist[tail++] = 0;
+      st[this.hotspots[h]] = stamp;
+      while (head < tail) {
+        const j = q[head];
+        const d = dist[head++];
+        const i = claim[j];
+        if (i >= 0 && pool.alive[i] && pool.volcanic[i] < VOLCANIC_CAP_KM) pool.volcanic[i] += this.hotspotRate * this.heat;
+        if (d >= this.hotspotRadius) continue;
+        for (let t = grid.nbStart[j]; t < grid.nbStart[j + 1]; t++) {
+          const nb = grid.nb[t];
+          if (st[nb] === stamp || tail >= q.length) continue;
+          st[nb] = stamp;
+          q[tail] = nb;
+          dist[tail++] = d + 1;
+        }
+      }
     }
   }
 

@@ -66,6 +66,7 @@ function template(): string {
         </div>
         <div class="row">
           <label class="check"><input type="checkbox" id="autoPreview" checked /> Preview on change (coarser grid, under 2 s)</label>
+          <label class="check"><input type="checkbox" id="fineGrid" /> Fine grid for full builds (cells of 55 km, four times as many; several times slower)</label>
         </div>
         <progress id="progress" max="1" value="0"></progress>
         <div id="status" class="status"></div>
@@ -129,6 +130,7 @@ export function mountApp(root: HTMLElement): void {
   const variationButton = q<HTMLButtonElement>('#variation');
   const realEarthButton = q<HTMLButtonElement>('#realEarth');
   const autoPreview = q<HTMLInputElement>('#autoPreview');
+  const fineGrid = q<HTMLInputElement>('#fineGrid');
   const progress = q<HTMLProgressElement>('#progress');
   const status = q<HTMLDivElement>('#status');
   const layerSelect = q<HTMLSelectElement>('#layer');
@@ -484,7 +486,9 @@ export function mountApp(root: HTMLElement): void {
         onHistory: (elapsedMs) => {
           status.textContent = `history ready in ${(elapsedMs / 1000).toFixed(1)} s; drag the slider under the map or press Play`;
         },
-      }, mode === 'preview' ? { coarser: 1 } : { keyframes: levelIsLarge(params) ? KEYFRAMES_LARGE_GRID : KEYFRAMES });
+      }, mode === 'preview'
+        ? { coarser: 1 }
+        : { keyframes: levelIsLarge(params) || fineGrid.checked ? KEYFRAMES_LARGE_GRID : KEYFRAMES, coarser: fineGrid.checked ? -1 : 0 });
       if (mode === 'full') {
         entry = addToGallery(result.world);
         current = entry;

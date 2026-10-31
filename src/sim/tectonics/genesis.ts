@@ -93,8 +93,15 @@ export interface Genesis {
   traveler: number;
 }
 
-export function genesis(grid: Grid, count: number, rng: Rng, cellAngle: number, speed: number): Genesis {
+/**
+ * `unitAngle` is the angle of one reference cell (about 112 km) on this planet and
+ * `cellsPerUnit` how many grid cells fit in one, so widths in cells and speeds in
+ * cells per step mean the same kilometers on every grid (M18).
+ */
+export function genesis(grid: Grid, count: number, rng: Rng, unitAngle: number, cellsPerUnit: number, speed: number): Genesis {
   const n = grid.n;
+  const cellAngle = unitAngle;
+  const hops = (units: number): number => Math.max(1, Math.round(units * cellsPerUnit));
   const xyz = grid.xyz;
   const coreRng = rng.fork('genesis-cores');
   const seedRng = rng.fork('genesis-seeds');
@@ -230,7 +237,8 @@ export function genesis(grid: Grid, count: number, rng: Rng, cellAngle: number, 
     fromYoung[i] = young[i];
     frontier.push(i);
   }
-  for (let d = 1; d <= MARGIN_PASSIVE_KM.length && frontier.length > 0; d++) {
+  const marginHops = hops(MARGIN_PASSIVE_KM.length);
+  for (let d = 1; d <= marginHops && frontier.length > 0; d++) {
     const next: number[] = [];
     for (const i of frontier) {
       for (let t = grid.nbStart[i]; t < grid.nbStart[i + 1]; t++) {
@@ -251,7 +259,8 @@ export function genesis(grid: Grid, count: number, rng: Rng, cellAngle: number, 
     // Rifted fragments (the traveler and any other) have passive margins all around.
     const table = fromYoung[i] || label[i] >= 1 ? MARGIN_PASSIVE_KM : MARGIN_ACTIVE_KM;
     let base: number;
-    if (d >= 1 && d <= table.length) base = table[d - 1];
+    const units = d / cellsPerUnit;
+    if (d >= 1 && units <= table.length) base = marginThickness(table, units);
     else {
       const x = xyz[3 * i];
       const y = xyz[3 * i + 1];
@@ -285,7 +294,7 @@ export function genesis(grid: Grid, count: number, rng: Rng, cellAngle: number, 
     source[i] = plateOf[i];
     frontier.push(i);
   }
-  const maxHop = Math.max(STRIP_CELLS[1], FREE_SEED_CLEARANCE_CELLS);
+  const maxHop = hops(Math.max(STRIP_CELLS[1], FREE_SEED_CLEARANCE_CELLS));
   for (let d = 1; d <= maxHop && frontier.length > 0; d++) {
     const next: number[] = [];
     for (const i of frontier) {
@@ -301,12 +310,12 @@ export function genesis(grid: Grid, count: number, rng: Rng, cellAngle: number, 
     frontier = next;
   }
   for (let i = 0; i < n; i++) {
-    if (plateOf[i] >= 0 || hop[i] > STRIP_CELLS[1]) continue;
+    if (plateOf[i] >= 0 || hop[i] > hops(STRIP_CELLS[1])) continue;
     const x = xyz[3 * i];
     const y = xyz[3 * i + 1];
     const z = xyz[3 * i + 2];
     const width = STRIP_CELLS[0] + (STRIP_CELLS[1] - STRIP_CELLS[0]) * (0.5 + 0.5 * stripNoise.fbm(x * 1.5, y * 1.5, z * 1.5, 2));
-    if (hop[i] <= Math.round(width)) plateOf[i] = source[i];
+    if (hop[i] <= Math.round(width * cellsPerUnit)) plateOf[i] = source[i];
   }
   const seeds: Vec3[] = [];
   const bias: number[] = [];
@@ -316,7 +325,7 @@ export function genesis(grid: Grid, count: number, rng: Rng, cellAngle: number, 
       let nearest = Infinity;
       for (const s of seeds) nearest = Math.min(nearest, angleBetween(candidate[0], candidate[1], candidate[2], s[0], s[1], s[2]));
       const cell = nearestCell(grid, candidate[0], candidate[1], candidate[2]);
-      if (nearest > FREE_SPACING && hop[cell] > FREE_SEED_CLEARANCE_CELLS) break;
+      if (nearest > FREE_SPACING && hop[cell] > hops(FREE_SEED_CLEARANCE_CELLS)) break;
       candidate = randomUnit(seedRng);
     }
     seeds.push(candidate);
@@ -458,6 +467,16 @@ function labelComponents(grid: Grid, mask: Uint8Array): { label: Int32Array; siz
   const label = new Int32Array(n);
   for (let i = 0; i < n; i++) label[i] = raw[i] < 0 ? -1 : remap[raw[i]];
   return { label, sizes: rank.map((i) => sizes[i]) };
+}
+
+/** Margin thickness at a distance from the sea in reference cells, interpolated between the table's values at whole cells. */
+function marginThickness(table: readonly number[], units: number): number {
+  if (units <= 1) return table[0];
+  const last = table.length;
+  if (units >= last) return table[last - 1];
+  const lo = Math.floor(units);
+  const f = units - lo;
+  return table[lo - 1] * (1 - f) + table[lo] * f;
 }
 
 /** Point on the rift's base circle at the given along-angle. */

@@ -1,7 +1,7 @@
 import { angleBetween } from '../grid/geometry.ts';
 import type { Grid } from '../grid/grid.ts';
 import { MinHeap } from './heap.ts';
-import { RUNOFF_COEFFICIENT, oceanDistance, potentialEvaporation, proxyPrecipitation } from './precipitation.ts';
+import { oceanDistance, potentialEvaporation, proxyPrecipitation, runoffFraction } from './precipitation.ts';
 
 export interface LakeInfo {
   id: number;
@@ -176,7 +176,8 @@ export class Hydrology {
     const area = this.areaKm2;
     const runoff = this.runoff;
     for (let i = 0; i < n; i++) {
-      runoff[i] = elevation[i] >= seaLevel ? p[i] * 1e-6 * RUNOFF_COEFFICIENT * area[i] : 0;
+      // Budyko: dry land evaporates nearly all its rain, wet land sends half of it to the rivers.
+      runoff[i] = elevation[i] >= seaLevel ? p[i] * runoffFraction(p[i], this.evaporationAt(i)) * 1e-6 * area[i] : 0;
     }
   }
 

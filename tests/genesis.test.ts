@@ -41,7 +41,8 @@ function largestComponent(mask: Uint8Array): [number, number] {
 }
 
 describe('the initial condition', () => {
-  const g = genesis(grid, params.plateCount, new Rng(1).fork('tectonics').fork('genesis'), cellAngle, 1);
+  // On Earth's grid one grid cell is one reference cell, so the unit angle is the cell angle.
+  const g = genesis(grid, params.plateCount, new Rng(1).fork('tectonics').fork('genesis'), cellAngle, 1, 1);
 
   it('seeds the requested share of continental crust as one supercontinent, on plates of unequal size', () => {
     let total = 0;

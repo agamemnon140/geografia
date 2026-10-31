@@ -1,8 +1,9 @@
 /**
  * Crust model constants (DESIGN 3.3). Units: thickness in km, elevation in m,
- * ages in tectonic steps (one step is roughly one million years at Earth-like
- * plate speeds, since a cell is ~110 km and plates move a fraction of a cell
- * per step).
+ * ages in tectonic steps (one step is one million years). Lengths, counts and
+ * speeds given "in cells" mean reference cells of about 112 km, the size of
+ * an Earth-level cell (constants.ts); the simulation converts them to its
+ * own grid (M18), so a finer grid gives the same planet in kilometers.
  */
 
 export const OCEANIC = 0;
