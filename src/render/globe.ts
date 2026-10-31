@@ -241,6 +241,21 @@ export class GlobeView {
         ctx.restore();
       }
     }
+    if (layer.labels && !quick) {
+      const ctx = this.ctx;
+      ctx.save();
+      ctx.font = 'bold 14px system-ui, sans-serif';
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = 'rgba(0, 0, 0, 0.8)';
+      ctx.fillStyle = '#fff';
+      for (const label of layer.labels(world)) {
+        const at = projectToGlobe(grid, label.cell, this.size, this.lon, this.lat);
+        if (!at) continue;
+        ctx.strokeText(label.text, at[0] + 6, at[1] - 6);
+        ctx.fillText(label.text, at[0] + 6, at[1] - 6);
+      }
+      ctx.restore();
+    }
   }
 
   private pixelOf(event: PointerEvent): [number, number] {

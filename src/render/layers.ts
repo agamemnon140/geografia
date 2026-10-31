@@ -2,6 +2,7 @@ import { ANNUAL, SAMPLES } from '../sim/climate/insolation.ts';
 import { KOPPEN_NAMES } from '../sim/climate/koppen.ts';
 import type { World } from '../sim/pipeline.ts';
 import { MEGAFAUNA_HERBIVORES, MEGAFAUNA_PREDATORS, REALM_NONE } from '../sim/biosphere/fauna.ts';
+import { UNREACHED } from '../sim/civilization/civilization.ts';
 import { VEGETATION_NAMES } from '../sim/biosphere/flora.ts';
 import { LINEAGE_COUNT } from '../sim/tectonics/crust.ts';
 import { MINERALS, MINERAL_COUNT, MINERAL_NAMES } from '../sim/resources/minerals.ts';
@@ -38,6 +39,12 @@ export interface Mark {
   color: RGB;
 }
 
+/** A short text drawn beside a cell by the interactive views (the command-line renderer has no text). */
+export interface Label {
+  cell: number;
+  text: string;
+}
+
 export interface Layer {
   id: string;
   name: string;
@@ -52,6 +59,8 @@ export interface Layer {
   smooth?(world: World, px: PixelSampler, sample: number): RGB;
   /** Point symbols drawn after the paint and the rivers. */
   marks?(world: World): Mark[];
+  /** Texts drawn beside cells by the interactive views. */
+  labels?(world: World): Label[];
 }
 
 /** Layers of a group, for the UI's dropdowns. */
@@ -310,6 +319,33 @@ const RICHNESS_RAMP: Stop[] = [
 const MEGAFAUNA_NONE: RGB = [215, 212, 205];
 const MEGAFAUNA_HERBIVORE_COLOR: RGB = [210, 170, 90];
 const MEGAFAUNA_PREDATOR_COLOR: RGB = [150, 60, 40];
+
+const HABITABILITY_RAMP: Stop[] = [
+  [0, [225, 222, 215]],
+  [0.5, [230, 180, 100]],
+  [1, [170, 40, 30]],
+];
+const FARM_RAMP: Stop[] = [
+  [0, [225, 222, 215]],
+  [0.4, [220, 200, 90]],
+  [1, [90, 120, 20]],
+];
+const CITY_RAMP: Stop[] = [
+  [0, [225, 222, 215]],
+  [0.3, [200, 170, 140]],
+  [0.6, [150, 90, 90]],
+  [1, [60, 20, 60]],
+];
+/** Arrival of people, thousands of years after the origin. */
+const ARRIVAL_RAMP: Stop[] = [
+  [0, [255, 240, 120]],
+  [20, [240, 150, 50]],
+  [50, [170, 50, 40]],
+  [100, [60, 20, 50]],
+];
+const UNREACHED_COLOR: RGB = [150, 150, 150];
+const CITY_MARK: RGB = [255, 255, 255];
+const ORIGIN_MARK: RGB = [255, 240, 120];
 
 const LAKE_COLOR: RGB = [40, 120, 210];
 export const RIVER_COLOR: RGB = [20, 70, 190];
@@ -742,6 +778,74 @@ function megafaunaColor(world: World, i: number): RGB {
   const bits = world.megafauna[i];
   return bits & MEGAFAUNA_PREDATORS ? MEGAFAUNA_PREDATOR_COLOR : bits & MEGAFAUNA_HERBIVORES ? MEGAFAUNA_HERBIVORE_COLOR : MEGAFAUNA_NONE;
 }
+
+/** A land ramp with the sea dim and the lakes blue. */
+function landRamp(world: World, i: number, stops: Stop[], value: number): RGB {
+  const rel = world.elevation[i] - world.seaLevel;
+  if (rel < 0) return koppenSea(rel);
+  if (world.lake[i] >= 0) return LAKE_COLOR;
+  return ramp(stops, value);
+}
+
+function arrivalColor(world: World, i: number): RGB {
+  const rel = world.elevation[i] - world.seaLevel;
+  if (rel < 0) return koppenSea(rel);
+  if (world.lake[i] >= 0) return LAKE_COLOR;
+  const ka = world.arrivalKa[i];
+  return ka === UNREACHED ? UNREACHED_COLOR : ramp(ARRIVAL_RAMP, ka);
+}
+
+const CIVILIZATION_LAYERS: Layer[] = [
+  {
+    id: 'habitability',
+    name: 'Habitability',
+    group: 'civilization',
+    legend: { kind: 'ramp', stops: HABITABILITY_RAMP, unit: '0 to 1: food × fresh water, under the thermal comfort' },
+    relief: 'light',
+    cellColor: (world, i) => landRamp(world, i, HABITABILITY_RAMP, world.habitability[i]),
+    smooth: (world, px) => (relief(world, px) < 0 ? koppenSea(relief(world, px)) : world.lake[px.cell] >= 0 ? LAKE_COLOR : ramp(HABITABILITY_RAMP, px.interp(world.habitability))),
+  },
+  {
+    id: 'agriculture',
+    name: 'Agricultural potential',
+    group: 'civilization',
+    legend: { kind: 'ramp', stops: FARM_RAMP, unit: '0 to 1: soil × growth, best where the cereals were domesticated (seasonal grasslands, Mediterranean, flood plains)' },
+    relief: 'light',
+    cellColor: (world, i) => landRamp(world, i, FARM_RAMP, world.agriculture[i]),
+    smooth: (world, px) => (relief(world, px) < 0 ? koppenSea(relief(world, px)) : world.lake[px.cell] >= 0 ? LAKE_COLOR : ramp(FARM_RAMP, px.interp(world.agriculture))),
+  },
+  {
+    id: 'citySite',
+    name: 'City sites',
+    group: 'civilization',
+    legend: {
+      kind: 'ramp',
+      stops: CITY_RAMP,
+      unit: 'score 0 to 1: river, harbor, fresh water, farmland within reach, defensibility, safety, minerals, centrality; white dots are the candidate cities, numbered best first',
+    },
+    relief: 'light',
+    rivers: true,
+    cellColor: (world, i) => landRamp(world, i, CITY_RAMP, world.citySite[i]),
+    smooth: (world, px) => (relief(world, px) < 0 ? koppenSea(relief(world, px)) : world.lake[px.cell] >= 0 ? LAKE_COLOR : ramp(CITY_RAMP, px.interp(world.citySite))),
+    marks: (world) => world.cities.map((c) => ({ cell: c.cell, color: CITY_MARK })),
+    labels: (world) => world.cities.map((c, k) => ({ cell: c.cell, text: String(k + 1) })),
+  },
+  {
+    id: 'dispersal',
+    name: 'Human dispersal',
+    group: 'civilization',
+    legend: {
+      kind: 'ramp',
+      stops: ARRIVAL_RAMP,
+      unit: 'thousands of years after the origin (the yellow dot); gray land is not reached within 100,000 years',
+    },
+    relief: 'light',
+    cellColor: (world, i) => arrivalColor(world, i),
+    smooth: (world, px) => arrivalColor(world, px.cell),
+    marks: (world) => (world.origin >= 0 ? [{ cell: world.origin, color: ORIGIN_MARK }] : []),
+  },
+];
+LAYERS.push(...CIVILIZATION_LAYERS);
 
 /** The land washed pale and the sea dim, so marks and potentials carry the color. */
 function mutedLand(rel: number): RGB {

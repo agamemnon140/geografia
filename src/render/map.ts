@@ -131,6 +131,28 @@ export class MapView {
     paintProjection(this.world, layerById(this.layerId), this.width, this.height, this.image.data, this.sample, this.viewport, this.projection);
     this.ctx.putImageData(this.image, 0, 0);
     if (this.selected >= 0) this.drawMarker(this.selected);
+    this.drawLabels();
+  }
+
+  /** Texts beside cells (the candidate cities' numbers): white on a dark outline. */
+  private drawLabels(): void {
+    if (!this.world) return;
+    const layer = layerById(this.layerId);
+    if (!layer.labels) return;
+    const grid = Grid.get(this.world.level);
+    const ctx = this.ctx;
+    ctx.save();
+    ctx.font = 'bold 14px system-ui, sans-serif';
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.8)';
+    ctx.fillStyle = '#fff';
+    for (const label of layer.labels(this.world)) {
+      const [px, py] = projectLatLon(this.projection, grid.lat[label.cell], grid.lon[label.cell], this.width, this.height, this.viewport);
+      if (px < 0 || py < 0 || px > this.width || py > this.height) continue;
+      ctx.strokeText(label.text, px + 6, py - 6);
+      ctx.fillText(label.text, px + 6, py - 6);
+    }
+    ctx.restore();
   }
 
   private drawMarker(cell: number): void {

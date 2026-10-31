@@ -99,6 +99,14 @@ every push to `main` of https://github.com/agamemnon140/geografia). Local:
   real Earth gets one lineage per large landmass (no history). Layers
   Faunal realms, Endemism, Species richness, Megafauna; Fauna section in
   Explain; realms row in Statistics.
+- M24: civilization, first slice (`src/sim/civilization/civilization.ts`):
+  habitability (food, water, comfort), agricultural potential, an eight-term
+  city-site score with thirty candidate cities 500 km apart (numbered on
+  the map and the globe: `Layer.labels`), human dispersal by shortest path
+  from a rule-chosen origin (terrain costs, open water at 6 per cell,
+  glacial bridges within 120 m, horizon 100 ka). Layers Habitability,
+  Agricultural potential, City sites, Human dispersal; Civilization section
+  in Explain; two rows in Statistics; `scripts/diag-civilization.ts [Real]`.
 
 ## Where things are
 
@@ -124,7 +132,7 @@ every push to `main` of https://github.com/agamemnon140/geografia). Local:
   `render-globe.ts`, `diag-tectonics.ts`, `diag-climate.ts [Real]`,
   `diag-resources.ts [preset] [seed]`, `convert-etopo5.ts`,
   `convert-paleodem.ts`, `convert-mrds.ts <mrds.csv>`, `make-icons.ts`.
-- `tests/`: 23 files, 128 tests; CI budget for the full build is 60 s.
+- `tests/`: 24 files, 132 tests; CI budget for the full build is 60 s.
   `tests/minerals.test.ts` pins seed 2's ocean fraction, mean land
   elevation, mean temperature and sea level to the M20 values: anything
   that changes the geography fails it on purpose.
@@ -186,8 +194,13 @@ spikes after collisions; past greenhouse not applied to the Earth timeline.
 
 ## Candidates for what comes next
 
-- Phase 3 of the vision (biosphere: flora and fauna on the timeline), then
-  phase 4 (civilization), as `docs/DESIGN.md` section 9 lays out.
+- The rest of phase 4 (`docs/DESIGN.md` 9.3): domestication potential from
+  flora and fauna, the spread of the agricultural package along latitude
+  bands, trade routes and centrality, a user-picked dispersal origin.
+- Speciation in the fauna (isolated landmasses growing their own
+  lineages) and succession in the flora.
+- Measured deposits for the real Earth once the USGS MRDS CSV is
+  downloaded by hand (`scripts/convert-mrds.ts`).
 - Aesthetics still open: smoothing plate boundaries at the cell scale;
   spreading collision thickening over two rings to remove suture spikes;
   glacial carving and post-glacial flooding for fjords and archipelagos.

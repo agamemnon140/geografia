@@ -98,6 +98,11 @@ export interface WorldStats {
   realmCount: number;
   /** Area-weighted endemism over the land. */
   meanEndemism: number;
+  /** Candidate cities found (M24); landmasses above 100,000 km^2 that people reach within the horizon, and how many there are; the latest arrival, thousands of years. */
+  cityCount: number;
+  landmassesReached: number;
+  landmassesTotal: number;
+  dispersalMaxKa: number;
 }
 
 export interface ReliefFields {
@@ -149,7 +154,17 @@ export interface ResourceFields {
   deposits: Uint8Array;
 }
 
-export function computeStats(grid: Grid, relief: ReliefFields, hydro: HydrologyFields, climate: ClimateFields, biome: BiomeFields, resources: ResourceFields): WorldStats {
+export interface CivilizationStatsFields {
+  arrivalKa: Float64Array;
+  landmass: Int32Array;
+  landmassAreas: number[];
+  cities: { cell: number; score: number }[];
+}
+
+/** Landmasses that count for the dispersal statistics, km^2. */
+export const DISPERSAL_LANDMASS_KM2 = 1e5;
+
+export function computeStats(grid: Grid, relief: ReliefFields, hydro: HydrologyFields, climate: ClimateFields, biome: BiomeFields, resources: ResourceFields, civ: CivilizationStatsFields): WorldStats {
   const { elevation, areaKm2, seaLevel, crustType, thickness } = relief;
   const n = elevation.length;
   let total = 0;
@@ -194,6 +209,8 @@ export function computeStats(grid: Grid, relief: ReliefFields, hydro: HydrologyF
   let nppSum = 0;
   const realmArea = new Float64Array(LINEAGE_COUNT);
   let endemismSum = 0;
+  const reached = new Uint8Array(civ.landmassAreas.length);
+  let dispersalMax = 0;
   const hyps = new Array<number>(HYPSOMETRY_BINS).fill(0);
   for (let i = 0; i < n; i++) {
     const e = elevation[i] - seaLevel;
@@ -232,6 +249,10 @@ export function computeStats(grid: Grid, relief: ReliefFields, hydro: HydrologyF
       vegetationArea[biome.vegetation[i]] += a;
       if (biome.realm[i] < LINEAGE_COUNT) realmArea[biome.realm[i]] += a;
       endemismSum += a * biome.endemism[i];
+      if (civ.arrivalKa[i] >= 0) {
+        if (civ.landmass[i] >= 0) reached[civ.landmass[i]] = 1;
+        if (civ.arrivalKa[i] > dispersalMax) dispersalMax = civ.arrivalKa[i];
+      }
       const group = koppenGroup(biome.koppen[i]) as keyof typeof koppen;
       if (group in koppen) koppen[group] += a;
     }
@@ -338,6 +359,10 @@ export function computeStats(grid: Grid, relief: ReliefFields, hydro: HydrologyF
     vegetationShares: vegetationArea.map((v) => (land > 0 ? v / land : 0)),
     realmCount: realmArea.filter((v) => v >= CONTINENT_MIN_KM2).length,
     meanEndemism: land > 0 ? endemismSum / land : 0,
+    cityCount: civ.cities.length,
+    landmassesReached: civ.landmassAreas.filter((a, m) => a >= DISPERSAL_LANDMASS_KM2 && reached[m]).length,
+    landmassesTotal: civ.landmassAreas.filter((a) => a >= DISPERSAL_LANDMASS_KM2).length,
+    dispersalMaxKa: dispersalMax,
   };
 }
 

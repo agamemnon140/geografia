@@ -1,4 +1,5 @@
 import { computeFauna } from './biosphere/fauna.ts';
+import { computeCivilization, type CityInfo } from './civilization/civilization.ts';
 import { computeFlora } from './biosphere/flora.ts';
 import { computeClimate } from './climate/climate.ts';
 import type { CirculationInfo } from './climate/circulation.ts';
@@ -164,6 +165,15 @@ export interface World {
   megafauna: Uint8Array;
   landmass: Int32Array;
   landmassAreas: number[];
+  /** Civilization (M24, civilization/civilization.ts): habitability with its three terms (cell-major), agricultural potential, the city-site score with its eight terms (cell-major, CITY_TERMS order), the candidate cities ranked best first, the arrival of people in thousands of years (UNREACHED where none), the origin cell. */
+  habitability: FloatArray;
+  habitabilityTerms: FloatArray;
+  agriculture: FloatArray;
+  citySite: FloatArray;
+  cityTerms: FloatArray;
+  cities: CityInfo[];
+  arrivalKa: FloatArray;
+  origin: number;
   circulation: CirculationInfo;
   /** Global mean sea-level temperature for this insolation and glacial phase, degrees C. */
   globalMeanTemperature: number;
@@ -194,6 +204,7 @@ export function worldBuffers(world: World): ArrayBuffer[] {
     world.seaIceMonths, world.iceSheet, world.koppen,
     world.npp, world.soil, world.soilAsh, world.soilAlluvium, world.soilLoss, world.vegetation,
     world.lineage, world.realm, world.endemism, world.richness, world.megafauna, world.landmass,
+    world.habitability, world.habitabilityTerms, world.agriculture, world.citySite, world.cityTerms, world.arrivalKa,
   ];
   return arrays.map((a) => a.buffer as ArrayBuffer);
 }
@@ -355,6 +366,25 @@ export function finalize(ctx: BuildContext, state: ReliefState, onProgress: Prog
     ? { potential: new Float64Array(MINERAL_COUNT * n), deposits: ctx.measuredDeposits ?? new Uint8Array(n) }
     : computeMinerals(grid, state, seaLevel, params.seed, params.radiusKm);
 
+  // Civilization (M24) on everything above: the flora, the fauna's landmasses, the deposits.
+  const civilization = computeCivilization(grid, state, seaLevel, {
+    areaKm2,
+    radiusKm: params.radiusKm,
+    temperatureAnnual: climate.temperature.annual,
+    temperature: climate.temperature.samples,
+    precipitation: hydro.precipitation,
+    discharge: hydro.discharge,
+    downstream: hydro.downstream,
+    lake: hydro.lake,
+    iceSheet: climate.ice.iceSheet,
+    npp: flora.npp,
+    soil: flora.soil,
+    vegetation: flora.vegetation,
+    landmass: fauna.landmass,
+    landmassAreas: fauna.landmassAreas,
+    deposits: minerals.deposits,
+  });
+
   onProgress('stats', 0.96);
   const elevationCrust = new Float64Array(n);
   const elevationVolcanic = new Float64Array(n);
@@ -396,6 +426,7 @@ export function finalize(ctx: BuildContext, state: ReliefState, onProgress: Prog
     },
     { seaIceMonths: climate.ice.seaIceMonths, iceSheet: climate.ice.iceSheet, koppen, npp: flora.npp, vegetation: flora.vegetation, realm: fauna.realm, endemism: fauna.endemism },
     { deposits: minerals.deposits },
+    { arrivalKa: civilization.arrivalKa, landmass: fauna.landmass, landmassAreas: fauna.landmassAreas, cities: civilization.cities },
   );
 
   // The hydrology object is reused for the next keyframe, so its arrays are copied out.
@@ -475,6 +506,14 @@ export function finalize(ctx: BuildContext, state: ReliefState, onProgress: Prog
     megafauna: fauna.megafauna,
     landmass: fauna.landmass,
     landmassAreas: fauna.landmassAreas,
+    habitability: civilization.habitability,
+    habitabilityTerms: civilization.habitabilityTerms,
+    agriculture: civilization.agriculture,
+    citySite: civilization.citySite,
+    cityTerms: civilization.cityTerms,
+    cities: civilization.cities,
+    arrivalKa: civilization.arrivalKa,
+    origin: civilization.origin,
     circulation: climate.circulation,
     globalMeanTemperature: climate.globalMeanTemperature,
     plates: state.plates,

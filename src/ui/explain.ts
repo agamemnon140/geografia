@@ -4,6 +4,7 @@ import { Grid, cellAreasKm2 } from '../sim/grid/grid.ts';
 import type { World } from '../sim/pipeline.ts';
 import { MEGAFAUNA_HERBIVORES, MEGAFAUNA_PREDATORS, REALM_NONE } from '../sim/biosphere/fauna.ts';
 import { SOIL_BASE, SOIL_WEIGHT, SUNSHINE_REFERENCE_H, SUNSHINE_WEIGHT, VEGETATION_NAMES, miamiNpp } from '../sim/biosphere/flora.ts';
+import { CITY_TERMS, CITY_WEIGHTS, UNREACHED } from '../sim/civilization/civilization.ts';
 import { REALM_NAMES } from '../render/layers.ts';
 import { LINEAGE_COUNT } from '../sim/tectonics/crust.ts';
 import { MINERALS, MINERAL_COUNT, MINERAL_NAMES } from '../sim/resources/minerals.ts';
@@ -197,6 +198,22 @@ export function explainCell(world: World, cell: number, sample: number): Section
       `megafauna   ${world.megafauna[cell] & MEGAFAUNA_PREDATORS ? 'large herbivores and large predators' : world.megafauna[cell] & MEGAFAUNA_HERBIVORES ? 'large herbivores, no large predators (the landmass is too small)' : 'none: too little growth or too small a landmass'}`,
     );
     sections.push({ title: 'Fauna', lines: fauna, group: 'life' });
+
+    // Civilization (M24): the indices with every term.
+    const civ: string[] = [];
+    const h = world.habitabilityTerms;
+    civ.push(
+      `habitability ${world.habitability[cell].toFixed(2)} = √(food ${h[3 * cell].toFixed(2)} × water ${h[3 * cell + 1].toFixed(2)}) × comfort ${h[3 * cell + 2].toFixed(2)}`,
+      `farmland    ${world.agriculture[cell].toFixed(2)} (soil × growth × the vegetation's suitability × water)`,
+    );
+    const rank = world.cities.findIndex((c) => c.cell === cell);
+    const terms = CITY_TERMS.map((name, k) => `${name} ${world.cityTerms[cell * CITY_TERMS.length + k].toFixed(2)}×${CITY_WEIGHTS[k]}`).join(', ');
+    civ.push(`city site   ${world.citySite[cell].toFixed(2)}${rank >= 0 ? ` (candidate city #${rank + 1})` : ''} = (${terms}) × comfort`);
+    const ka = world.arrivalKa[cell];
+    civ.push(
+      `people      ${cell === world.origin ? 'the origin of the dispersal' : ka === UNREACHED ? 'not reached within 100,000 years of the origin' : `arrive ${ka.toFixed(1)} thousand years after the origin`}`,
+    );
+    sections.push({ title: 'Civilization', lines: civ, group: 'civilization' });
   }
 
   return sections;

@@ -120,6 +120,26 @@ describe('the real Earth reference', () => {
     expect(earth.realm[cellAt(-80, 90)]).not.toBe(earth.realm[cellAt(-25, 135)]);
     expect(earth.stats.meanEndemism).toBeGreaterThan(0.9);
   });
+
+  it('finds the cradles of antiquity among the candidate cities and reaches every continent but Antarctica (M24)', () => {
+    const grid = Grid.get(earth.level);
+    const near = (lat: number, lon: number, km: number): boolean => {
+      const [x, y, z] = fromLatLon(lat * DEG, lon * DEG);
+      return earth.cities.some((c) => Math.acos(Math.max(-1, Math.min(1, x * grid.xyz[3 * c.cell] + y * grid.xyz[3 * c.cell + 1] + z * grid.xyz[3 * c.cell + 2]))) * earth.radiusKm < km);
+    };
+    // Nile, Mesopotamia, Indus, Yellow River, Rome, Athens, the valley of Mexico, Cusco, Ganges, Yangtze: the model's dry
+    // monsoon lands (the climate's known bias) miss the Asian ones, the Mediterranean and American ones are found.
+    const cradles: [number, number][] = [[30.5, 31.2], [32.5, 44.5], [27.5, 68.5], [35, 113], [41.9, 12.5], [38, 23.7], [19.4, -99.1], [-13.5, -72], [25.5, 82], [31, 120]];
+    const found = cradles.filter(([lat, lon]) => near(lat, lon, 800)).length;
+    expect(found).toBeGreaterThanOrEqual(4);
+    // Out of Africa: Europe, Siberia, Australia and the Americas are reached; Antarctica is not.
+    expect(earth.arrivalKa[cellAt(48, 10)]).toBeGreaterThan(0);
+    expect(earth.arrivalKa[cellAt(60, 100)]).toBeGreaterThan(0);
+    expect(earth.arrivalKa[cellAt(-25, 135)]).toBeGreaterThan(0);
+    expect(earth.arrivalKa[cellAt(40, -100)]).toBeGreaterThan(0);
+    expect(earth.arrivalKa[cellAt(-45, -70)]).toBeGreaterThan(earth.arrivalKa[cellAt(48, 10)]);
+    expect(earth.arrivalKa[cellAt(-80, 90)]).toBe(-1);
+  });
 });
 
 describe("the real Earth's past", () => {

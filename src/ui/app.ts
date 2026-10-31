@@ -231,6 +231,8 @@ export function mountApp(root: HTMLElement): void {
       : MINERALS.map((m, k) => `${MINERAL_NAMES[m]} ${w.stats.depositCounts[k]}`).join(', ')],
     ['Primary production', `${w.stats.landNppGtC.toFixed(0)} Gt C/yr on land; forest ${pct(forestShare(w.stats.vegetationShares), 0)}, grassland ${pct(grassShare(w.stats.vegetationShares), 0)}, desert and scrub ${pct(dryShare(w.stats.vegetationShares), 0)}`],
     ['Faunal realms', `${w.stats.realmCount} on land above a million km²${w.reference ? ' (by present connectivity: no history)' : ''}; mean endemism ${w.stats.meanEndemism.toFixed(2)}`],
+    ['Candidate cities', w.cities.slice(0, 5).map((c, k) => `#${k + 1} ${(c.score * 100).toFixed(0)}`).join(', ') + ` (${w.stats.cityCount} marked on the city-site layer)`],
+    ['Human dispersal', `${w.stats.landmassesReached} of ${w.stats.landmassesTotal} landmasses above 100,000 km² reached; the farthest ${w.stats.dispersalMaxKa.toFixed(0)} thousand years after the origin`],
   ];
   const statRows = (w: World): [string, string][] => {
     const s: WorldStats = w.stats;
