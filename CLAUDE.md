@@ -89,6 +89,16 @@ every push to `main` of https://github.com/agamemnon140/geografia). Local:
   productivity; no succession. Layers Primary productivity, Soil fertility,
   Vegetation (Life group); Flora section in Explain; production row in
   Statistics; `scripts/diag-biosphere.ts [Real]`.
+- M23: fauna (`src/sim/biosphere/fauna.ts`; lineage bookkeeping in
+  `parcels.ts` / `simulation.ts` `seedLineages`, `mixLineages`,
+  `mergeLineages`, constants `LINEAGE_*` in `crust.ts`): eight ancestral
+  lineages per crust parcel, seeded by sector around the supercontinent,
+  diffused along the land at each fluvial pass (never across the sea),
+  averaged on merges; on the final relief realm (dominant lineage),
+  endemism, richness (species-energy x species-area), megafauna bits; the
+  real Earth gets one lineage per large landmass (no history). Layers
+  Faunal realms, Endemism, Species richness, Megafauna; Fauna section in
+  Explain; realms row in Statistics.
 
 ## Where things are
 
@@ -101,7 +111,7 @@ every push to `main` of https://github.com/agamemnon140/geografia). Local:
   `genesis.ts` (initial condition), `riftpath.ts`, `crust.ts` (constants
   with their justification), `plates.ts`, `parcels.ts`.
 - `src/sim/resources/minerals.ts` (M21), `src/sim/biosphere/flora.ts`
-  (M22); worlds without a tectonic history (the real Earth) carry
+  (M22), `src/sim/biosphere/fauna.ts` (M23); worlds without a tectonic history (the real Earth) carry
   `BuildContext.noHistory`, which silences the rules that read the
   provenance.
 - `src/sim/hydrology/`, `src/sim/climate/` (ebm, temperature, circulation,
@@ -114,7 +124,7 @@ every push to `main` of https://github.com/agamemnon140/geografia). Local:
   `render-globe.ts`, `diag-tectonics.ts`, `diag-climate.ts [Real]`,
   `diag-resources.ts [preset] [seed]`, `convert-etopo5.ts`,
   `convert-paleodem.ts`, `convert-mrds.ts <mrds.csv>`, `make-icons.ts`.
-- `tests/`: 21 files, 121 tests; CI budget for the full build is 60 s.
+- `tests/`: 23 files, 128 tests; CI budget for the full build is 60 s.
   `tests/minerals.test.ts` pins seed 2's ocean fraction, mean land
   elevation, mean temperature and sea level to the M20 values: anything
   that changes the geography fails it on purpose.

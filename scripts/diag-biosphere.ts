@@ -11,6 +11,8 @@ import { nearestCell } from '../src/sim/grid/locate.ts';
 import { PRESETS } from '../src/sim/params.ts';
 import { build } from '../src/sim/pipeline.ts';
 import { VEGETATION_NAMES } from '../src/sim/biosphere/flora.ts';
+import { REALM_NAMES } from '../src/render/layers.ts';
+import { LINEAGE_COUNT } from '../src/sim/tectonics/crust.ts';
 
 const [, , presetName = 'Earth', seedArg = '2'] = process.argv;
 const real = presetName.toLowerCase() === 'real';
@@ -25,6 +27,17 @@ const w = real
 const grid = Grid.get(w.level);
 const s = w.stats;
 console.log(`land NPP ${s.landNppGtC.toFixed(1)} Gt C/yr (Earth about 56)`);
+console.log(`faunal realms ${s.realmCount} on land above a million km2, mean endemism ${s.meanEndemism.toFixed(2)}`);
+{
+  const realmArea = new Float64Array(LINEAGE_COUNT);
+  let landArea = 0;
+  for (let i = 0; i < w.n; i++) {
+    if (w.landmass[i] < 0) continue;
+    landArea += grid.area[i];
+    if (w.realm[i] < LINEAGE_COUNT) realmArea[w.realm[i]] += grid.area[i];
+  }
+  console.log('realm land shares: ' + Array.from(realmArea).map((a, k) => `${REALM_NAMES[k]} ${(100 * a / landArea).toFixed(0)}%`).join(', '));
+}
 VEGETATION_NAMES.forEach((name, k) => {
   if (k === 0) return;
   console.log(`${name.padEnd(26)} ${(100 * s.vegetationShares[k]).toFixed(1).padStart(6)} % of land`);

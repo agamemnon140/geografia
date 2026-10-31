@@ -38,9 +38,9 @@ describe('build', () => {
     expect(preview.preview).toBe(true);
     expect(preview.level).toBe(5);
     expect(preview.n).toBe(10242);
-    // 1.4 s alone on the reference machine; the suite runs files in parallel, hence the slack,
-    // and shared CI runners are slower still.
-    expect(seconds).toBeLessThan(process.env.CI ? 9 : 4);
+    // 2.3 s alone on the reference machine since the two cloud passes of M20; the suite runs
+    // files in parallel, hence the slack, and shared CI runners are slower still.
+    expect(seconds).toBeLessThan(process.env.CI ? 9 : 6);
     for (let i = 0; i < preview.n; i++) expect(Number.isFinite(preview.temperatureAnnual[i])).toBe(true);
   });
 

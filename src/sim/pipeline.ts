@@ -1,3 +1,4 @@
+import { computeFauna } from './biosphere/fauna.ts';
 import { computeFlora } from './biosphere/flora.ts';
 import { computeClimate } from './climate/climate.ts';
 import type { CirculationInfo } from './climate/circulation.ts';
@@ -13,7 +14,7 @@ import { validateParams, waterVolumeKm3, type PlanetParams } from './params.ts';
 import { MINERAL_COUNT, computeMinerals } from './resources/minerals.ts';
 import { Rng } from './rng/xoshiro.ts';
 import { computeStats, type WorldStats } from './stats.ts';
-import { SEDIMENT_M_PER_KM, convergentDepression, crustElevation, volcanicFactor } from './tectonics/crust.ts';
+import { LINEAGE_COUNT, SEDIMENT_M_PER_KM, convergentDepression, crustElevation, volcanicFactor } from './tectonics/crust.ts';
 import { BOUNDARY_SUBDUCTING, TectonicsSim, type TectonicEvent } from './tectonics/simulation.ts';
 
 import type { FloatArray } from './types.ts';
@@ -155,6 +156,14 @@ export interface World {
   soilAlluvium: FloatArray;
   soilLoss: FloatArray;
   vegetation: Uint8Array;
+  /** Fauna (M23, biosphere/fauna.ts): lineage shares per cell (cell-major, LINEAGE_COUNT per cell), dominant lineage (REALM_NONE on water), endemism and richness 0 to 1, megafauna bits, landmass id (-1 on water) and the landmasses' areas, km^2. */
+  lineage: FloatArray;
+  realm: Uint8Array;
+  endemism: FloatArray;
+  richness: FloatArray;
+  megafauna: Uint8Array;
+  landmass: Int32Array;
+  landmassAreas: number[];
   circulation: CirculationInfo;
   /** Global mean sea-level temperature for this insolation and glacial phase, degrees C. */
   globalMeanTemperature: number;
@@ -184,6 +193,7 @@ export function worldBuffers(world: World): ArrayBuffer[] {
     world.basin, world.streamfunction, world.currentU, world.currentV, world.sstAnomaly,
     world.seaIceMonths, world.iceSheet, world.koppen,
     world.npp, world.soil, world.soilAsh, world.soilAlluvium, world.soilLoss, world.vegetation,
+    world.lineage, world.realm, world.endemism, world.richness, world.megafauna, world.landmass,
   ];
   return arrays.map((a) => a.buffer as ArrayBuffer);
 }
@@ -216,6 +226,8 @@ export interface ReliefState {
   coal: Float64Array;
   oil: Float64Array;
   salt: Float64Array;
+  /** Fauna lineages carried by the parcels (M23), cell-major (cell * LINEAGE_COUNT + k), unnormalized; zero where the crust has never been land. */
+  lineage: Float64Array;
   plates: PlateInfo[];
   hotspots: number[];
   events: TectonicEvent[];
@@ -236,8 +248,10 @@ export function snapshotSim(sim: TectonicsSim): ReliefState {
   const coal = new Float64Array(n);
   const oil = new Float64Array(n);
   const salt = new Float64Array(n);
+  const lineage = new Float64Array(LINEAGE_COUNT * n);
   for (let j = 0; j < n; j++) {
     const i = claim[j];
+    for (let k = 0; k < LINEAGE_COUNT; k++) lineage[j * LINEAGE_COUNT + k] = pool.lineage[i * LINEAGE_COUNT + k];
     crustType[j] = pool.crustType[i];
     thickness[j] = pool.thickness[i];
     crustAge[j] = pool.age[i];
@@ -265,6 +279,7 @@ export function snapshotSim(sim: TectonicsSim): ReliefState {
     coal,
     oil,
     salt,
+    lineage,
     plates: sim.plates.map((p) => ({ axis: [p.axis[0], p.axis[1], p.axis[2]], rate: p.rate })),
     hotspots: Array.from(sim.hotspots),
     events: sim.events.map((e) => ({ ...e })),
@@ -332,6 +347,9 @@ export function finalize(ctx: BuildContext, state: ReliefState, onProgress: Prog
     history: !ctx.noHistory,
   });
 
+  // Fauna (M23) from the lineages the loop carried, on the flora's productivity.
+  const fauna = computeFauna(grid, state, seaLevel, areaKm2, flora.npp, climate.ice.iceSheet, !ctx.noHistory);
+
   // Resources from the provenance (M21); measured ones, or none, for a world without a history.
   const minerals = ctx.noHistory
     ? { potential: new Float64Array(MINERAL_COUNT * n), deposits: ctx.measuredDeposits ?? new Uint8Array(n) }
@@ -376,7 +394,7 @@ export function finalize(ctx: BuildContext, state: ReliefState, onProgress: Prog
       cloudShortwave: climate.temperature.cloudShortwave,
       cloudLongwave: climate.temperature.cloudLongwave,
     },
-    { seaIceMonths: climate.ice.seaIceMonths, iceSheet: climate.ice.iceSheet, koppen, npp: flora.npp, vegetation: flora.vegetation },
+    { seaIceMonths: climate.ice.seaIceMonths, iceSheet: climate.ice.iceSheet, koppen, npp: flora.npp, vegetation: flora.vegetation, realm: fauna.realm, endemism: fauna.endemism },
     { deposits: minerals.deposits },
   );
 
@@ -450,6 +468,13 @@ export function finalize(ctx: BuildContext, state: ReliefState, onProgress: Prog
     soilAlluvium: flora.soilAlluvium,
     soilLoss: flora.soilLoss,
     vegetation: flora.vegetation,
+    lineage: fauna.lineage,
+    realm: fauna.realm,
+    endemism: fauna.endemism,
+    richness: fauna.richness,
+    megafauna: fauna.megafauna,
+    landmass: fauna.landmass,
+    landmassAreas: fauna.landmassAreas,
     circulation: climate.circulation,
     globalMeanTemperature: climate.globalMeanTemperature,
     plates: state.plates,

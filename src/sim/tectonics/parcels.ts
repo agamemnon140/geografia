@@ -1,4 +1,4 @@
-import { CONTINENTAL_THICKNESS_KM, OCEANIC, OCEANIC_THICKNESS_KM } from './crust.ts';
+import { CONTINENTAL_THICKNESS_KM, LINEAGE_COUNT, OCEANIC, OCEANIC_THICKNESS_KM } from './crust.ts';
 
 /**
  * Crust parcels. Each parcel is a piece of crust fixed to one cell of its
@@ -32,6 +32,8 @@ export class ParcelPool {
   coal: Float64Array;
   oil: Float64Array;
   salt: Float64Array;
+  /** Fauna lineages (M23): LINEAGE_COUNT shares per parcel, parcel-major; all zero on crust that has never been land. */
+  lineage: Float32Array;
   frameIndex: Int32Array[];
 
   constructor(n: number, plateCount: number) {
@@ -50,6 +52,7 @@ export class ParcelPool {
     this.coal = new Float64Array(this.capacity);
     this.oil = new Float64Array(this.capacity);
     this.salt = new Float64Array(this.capacity);
+    this.lineage = new Float32Array(LINEAGE_COUNT * this.capacity);
     this.frameIndex = [];
     for (let p = 0; p < plateCount; p++) this.frameIndex.push(new Int32Array(n).fill(-1));
   }
@@ -76,6 +79,7 @@ export class ParcelPool {
     this.coal[id] = 0;
     this.oil[id] = 0;
     this.salt[id] = 0;
+    this.lineage.fill(0, id * LINEAGE_COUNT, (id + 1) * LINEAGE_COUNT);
     this.frameIndex[plate][frameCell] = id;
     return id;
   }
@@ -120,6 +124,9 @@ export class ParcelPool {
     this.coal = grow64(this.coal);
     this.oil = grow64(this.oil);
     this.salt = grow64(this.salt);
+    const lineage = new Float32Array(LINEAGE_COUNT * cap);
+    lineage.set(this.lineage);
+    this.lineage = lineage;
     this.capacity = cap;
   }
 }

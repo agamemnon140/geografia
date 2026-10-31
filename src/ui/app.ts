@@ -230,6 +230,7 @@ export function mountApp(root: HTMLElement): void {
       ? 'not available for the measured relief (no tectonic history, no shipped data)'
       : MINERALS.map((m, k) => `${MINERAL_NAMES[m]} ${w.stats.depositCounts[k]}`).join(', ')],
     ['Primary production', `${w.stats.landNppGtC.toFixed(0)} Gt C/yr on land; forest ${pct(forestShare(w.stats.vegetationShares), 0)}, grassland ${pct(grassShare(w.stats.vegetationShares), 0)}, desert and scrub ${pct(dryShare(w.stats.vegetationShares), 0)}`],
+    ['Faunal realms', `${w.stats.realmCount} on land above a million km²${w.reference ? ' (by present connectivity: no history)' : ''}; mean endemism ${w.stats.meanEndemism.toFixed(2)}`],
   ];
   const statRows = (w: World): [string, string][] => {
     const s: WorldStats = w.stats;

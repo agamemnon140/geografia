@@ -2,7 +2,10 @@ import { cloudAt, koppenName, precipitationAt, temperatureAt, windAt, type Layer
 import { ANNUAL, SAMPLES } from '../sim/climate/insolation.ts';
 import { Grid, cellAreasKm2 } from '../sim/grid/grid.ts';
 import type { World } from '../sim/pipeline.ts';
+import { MEGAFAUNA_HERBIVORES, MEGAFAUNA_PREDATORS, REALM_NONE } from '../sim/biosphere/fauna.ts';
 import { SOIL_BASE, SOIL_WEIGHT, SUNSHINE_REFERENCE_H, SUNSHINE_WEIGHT, VEGETATION_NAMES, miamiNpp } from '../sim/biosphere/flora.ts';
+import { REALM_NAMES } from '../render/layers.ts';
+import { LINEAGE_COUNT } from '../sim/tectonics/crust.ts';
 import { MINERALS, MINERAL_COUNT, MINERAL_NAMES } from '../sim/resources/minerals.ts';
 import { BOUNDARY_NAMES } from '../sim/tectonics/simulation.ts';
 
@@ -176,6 +179,24 @@ export function explainCell(world: World, cell: number, sample: number): Section
       );
     }
     sections.push({ title: 'Flora', lines: flora, group: 'life' });
+
+    // Fauna (M23): the lineages, where they came from, and what they support.
+    const fauna: string[] = [];
+    const shares: string[] = [];
+    for (let k = 0; k < LINEAGE_COUNT; k++) {
+      const v = world.lineage[cell * LINEAGE_COUNT + k];
+      if (v >= 0.05) shares.push(`${REALM_NAMES[k]} ${(100 * v).toFixed(0)}%`);
+    }
+    const realm = world.realm[cell];
+    const mass = world.landmass[cell];
+    const area = mass >= 0 ? world.landmassAreas[mass] : 0;
+    fauna.push(
+      `realm       ${realm === REALM_NONE ? 'none' : REALM_NAMES[realm]}${shares.length ? ` (lineages: ${shares.join(', ')})` : ''}${world.reference ? '; by present connectivity, no history' : ''}`,
+      `endemism    ${world.endemism[cell].toFixed(2)}: share of this fauna found on no other landmass`,
+      `richness    ${world.richness[cell].toFixed(2)} = growth term × landmass term (${area >= 1e6 ? `${(area / 1e6).toFixed(1)} million` : area.toFixed(0)} km²)`,
+      `megafauna   ${world.megafauna[cell] & MEGAFAUNA_PREDATORS ? 'large herbivores and large predators' : world.megafauna[cell] & MEGAFAUNA_HERBIVORES ? 'large herbivores, no large predators (the landmass is too small)' : 'none: too little growth or too small a landmass'}`,
+    );
+    sections.push({ title: 'Fauna', lines: fauna, group: 'life' });
   }
 
   return sections;

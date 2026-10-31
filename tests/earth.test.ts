@@ -110,6 +110,16 @@ describe('the real Earth reference', () => {
     expect(earth.npp[at(23, 10)]).toBeLessThan(200);
     for (let i = 0; i < earth.n; i += 97) expect(earth.mineralPotential[i]).toBe(0);
   });
+
+  it('gives the real Earth realms by present connectivity (M23): one lineage per large landmass', () => {
+    // Afro-Eurasia with the Americas (joined at the Bering cell), Antarctica, Australia, Greenland, and islands.
+    expect(earth.stats.realmCount).toBeGreaterThanOrEqual(3);
+    expect(earth.stats.realmCount).toBeLessThanOrEqual(8);
+    expect(earth.realm[cellAt(50, 10)]).toBe(earth.realm[cellAt(40, -100)]);
+    expect(earth.realm[cellAt(-25, 135)]).not.toBe(earth.realm[cellAt(50, 10)]);
+    expect(earth.realm[cellAt(-80, 90)]).not.toBe(earth.realm[cellAt(-25, 135)]);
+    expect(earth.stats.meanEndemism).toBeGreaterThan(0.9);
+  });
 });
 
 describe("the real Earth's past", () => {

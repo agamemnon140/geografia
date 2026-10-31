@@ -1,0 +1,224 @@
+import type { Grid } from '../grid/grid.ts';
+import type { ReliefState } from '../pipeline.ts';
+import { LINEAGE_COUNT } from '../tectonics/crust.ts';
+
+/**
+ * Fauna (M23; DESIGN 3.12): biogeographic realms, endemism, richness and
+ * megafauna from the lineages the tectonic loop carried on the crust
+ * parcels (tectonics/crust.ts LINEAGE_*). The loop seeded eight ancestral
+ * faunas around the supercontinent and let them diffuse along the land at
+ * every fluvial pass, never across the sea, so a continent that split off
+ * long ago keeps the lineages it left with and a strait that opened late
+ * divides two faunas that are still alike: the realm map is an outcome of
+ * the plate history. Richness follows the species-energy and the
+ * species-area relations (productivity and landmass size); endemism is the
+ * share of a cell's fauna found on no other landmass; large herbivores
+ * need productive ground on a landmass of some size, large predators a
+ * bigger one. A relief without a history (the real Earth) gets one lineage
+ * per large landmass, smaller ones taking the nearest's: realms by present
+ * connectivity only.
+ */
+
+export const REALM_NONE = 255;
+/** Landmass size at which large herbivores and large predators are sustained, km^2 (Madagascar carries the first, not the second). */
+export const HERBIVORE_LANDMASS_KM2 = 2e5;
+export const PREDATOR_LANDMASS_KM2 = 1e6;
+/** Productivity for large herbivores, g C/m^2/yr (steppes qualify, deserts do not). */
+export const HERBIVORE_NPP = 200;
+/** Richness: productivity at which the energy term saturates, and the landmass sizes between which the area term rises (log scale). */
+export const RICHNESS_NPP = 1000;
+export const RICHNESS_AREA_MIN_KM2 = 1e4;
+export const RICHNESS_AREA_MAX_KM2 = 1e7;
+/** Landmasses that seed their own lineage on a relief without history. */
+export const HISTORYLESS_REALMS = LINEAGE_COUNT;
+export const MEGAFAUNA_HERBIVORES = 1;
+export const MEGAFAUNA_PREDATORS = 2;
+
+export interface FaunaFields {
+  /** Lineage shares per cell, cell-major (cell * LINEAGE_COUNT + k), summing to 1 on land, 0 on water. */
+  lineage: Float64Array;
+  /** Dominant lineage, REALM_NONE on water. */
+  realm: Uint8Array;
+  /** Share of the cell's fauna found on no other landmass, 0 to 1. */
+  endemism: Float64Array;
+  /** Species richness index 0 to 1. */
+  richness: Float64Array;
+  /** MEGAFAUNA_* bits. */
+  megafauna: Uint8Array;
+  /** Landmass id per cell (-1 on water) and the landmasses' areas, km^2. */
+  landmass: Int32Array;
+  landmassAreas: number[];
+}
+
+function clamp01(v: number): number {
+  return v < 0 ? 0 : v > 1 ? 1 : v;
+}
+
+/** Connected land components: id per cell (-1 on water) and their areas. */
+export function labelLandmasses(grid: Grid, elevation: Float64Array, seaLevel: number, areaKm2: Float64Array): { landmass: Int32Array; areas: number[] } {
+  const n = grid.n;
+  const landmass = new Int32Array(n).fill(-1);
+  const queue = new Int32Array(n);
+  const areas: number[] = [];
+  for (let s = 0; s < n; s++) {
+    if (landmass[s] >= 0 || elevation[s] < seaLevel) continue;
+    const id = areas.length;
+    let head = 0;
+    let tail = 0;
+    let area = 0;
+    landmass[s] = id;
+    queue[tail++] = s;
+    while (head < tail) {
+      const i = queue[head++];
+      area += areaKm2[i];
+      for (let t = grid.nbStart[i]; t < grid.nbStart[i + 1]; t++) {
+        const j = grid.nb[t];
+        if (landmass[j] < 0 && elevation[j] >= seaLevel) {
+          landmass[j] = id;
+          queue[tail++] = j;
+        }
+      }
+    }
+    areas.push(area);
+  }
+  return { landmass, areas };
+}
+
+/** Lineages for a relief without history: the largest landmasses get one each, every other cell the nearest large landmass's. */
+function historylessLineages(grid: Grid, landmass: Int32Array, areas: number[]): Float64Array {
+  const n = grid.n;
+  const L = LINEAGE_COUNT;
+  const out = new Float64Array(L * n);
+  const ranked = areas.map((a, id) => [a, id] as const).sort((p, q) => q[0] - p[0]).slice(0, HISTORYLESS_REALMS);
+  const lineageOf = new Int32Array(areas.length).fill(-1);
+  ranked.forEach(([, id], k) => (lineageOf[id] = k));
+  // Multi-source breadth-first search from the large landmasses over every cell, water included.
+  const nearest = new Int32Array(n).fill(-1);
+  const queue = new Int32Array(n);
+  let tail = 0;
+  for (let i = 0; i < n; i++) {
+    const id = landmass[i];
+    if (id >= 0 && lineageOf[id] >= 0) {
+      nearest[i] = lineageOf[id];
+      queue[tail++] = i;
+    }
+  }
+  for (let head = 0; head < tail; head++) {
+    const i = queue[head];
+    for (let t = grid.nbStart[i]; t < grid.nbStart[i + 1]; t++) {
+      const j = grid.nb[t];
+      if (nearest[j] < 0) {
+        nearest[j] = nearest[i];
+        queue[tail++] = j;
+      }
+    }
+  }
+  for (let i = 0; i < n; i++) if (landmass[i] >= 0 && nearest[i] >= 0) out[i * L + nearest[i]] = 1;
+  return out;
+}
+
+/** Land without any lineage (an island risen from the sea floor, which nothing could reach by land) takes the fauna of the nearest cell that has one: waif dispersal across the sea. */
+function colonizeEmptyLand(grid: Grid, landmass: Int32Array, lineage: Float64Array): void {
+  const n = grid.n;
+  const L = LINEAGE_COUNT;
+  const source = new Int32Array(n).fill(-1);
+  const queue = new Int32Array(n);
+  let tail = 0;
+  for (let i = 0; i < n; i++) {
+    if (landmass[i] < 0) continue;
+    let sum = 0;
+    for (let k = 0; k < L; k++) sum += lineage[i * L + k];
+    if (sum > 0) {
+      source[i] = i;
+      queue[tail++] = i;
+    }
+  }
+  if (tail === 0) return;
+  for (let head = 0; head < tail; head++) {
+    const i = queue[head];
+    for (let t = grid.nbStart[i]; t < grid.nbStart[i + 1]; t++) {
+      const j = grid.nb[t];
+      if (source[j] < 0) {
+        source[j] = source[i];
+        queue[tail++] = j;
+      }
+    }
+  }
+  for (let i = 0; i < n; i++) {
+    const s = source[i];
+    if (landmass[i] < 0 || s < 0 || s === i) continue;
+    for (let k = 0; k < L; k++) lineage[i * L + k] = lineage[s * L + k];
+  }
+}
+
+export function computeFauna(
+  grid: Grid,
+  state: ReliefState,
+  seaLevel: number,
+  areaKm2: Float64Array,
+  npp: Float64Array,
+  iceSheet: Uint8Array,
+  history: boolean,
+): FaunaFields {
+  const n = grid.n;
+  const L = LINEAGE_COUNT;
+  const { landmass, areas } = labelLandmasses(grid, state.elevation, seaLevel, areaKm2);
+  const lineage = new Float64Array(L * n);
+  if (history) {
+    // Normalized shares from the parcels' vectors (cell-major here, parcel-major in the pool).
+    for (let i = 0; i < n; i++) {
+      if (landmass[i] < 0) continue;
+      let sum = 0;
+      for (let k = 0; k < L; k++) sum += state.lineage[i * L + k];
+      if (sum <= 0) continue;
+      for (let k = 0; k < L; k++) lineage[i * L + k] = state.lineage[i * L + k] / sum;
+    }
+    colonizeEmptyLand(grid, landmass, lineage);
+  } else {
+    lineage.set(historylessLineages(grid, landmass, areas));
+  }
+
+  // Lineage area per landmass and in all, for the endemism (the share found on no other landmass).
+  const perLandmass = new Float64Array(L * areas.length);
+  const total = new Float64Array(L);
+  for (let i = 0; i < n; i++) {
+    const id = landmass[i];
+    if (id < 0) continue;
+    for (let k = 0; k < L; k++) {
+      const v = areaKm2[i] * lineage[i * L + k];
+      perLandmass[id * L + k] += v;
+      total[k] += v;
+    }
+  }
+
+  const realm = new Uint8Array(n).fill(REALM_NONE);
+  const endemism = new Float64Array(n);
+  const richness = new Float64Array(n);
+  const megafauna = new Uint8Array(n);
+  const logSpan = Math.log10(RICHNESS_AREA_MAX_KM2 / RICHNESS_AREA_MIN_KM2);
+  for (let i = 0; i < n; i++) {
+    const id = landmass[i];
+    if (id < 0) continue;
+    let best = -1;
+    let bestShare = 0;
+    let endemic = 0;
+    for (let k = 0; k < L; k++) {
+      const v = lineage[i * L + k];
+      if (v > bestShare) {
+        bestShare = v;
+        best = k;
+      }
+      if (v > 0 && total[k] > 0) endemic += v * (perLandmass[id * L + k] / total[k]);
+    }
+    if (best >= 0) realm[i] = best;
+    endemism[i] = clamp01(endemic);
+    const area = areas[id];
+    const energy = Math.sqrt(clamp01(npp[i] / RICHNESS_NPP));
+    const size = clamp01(Math.log10(Math.max(RICHNESS_AREA_MIN_KM2, area) / RICHNESS_AREA_MIN_KM2) / logSpan);
+    richness[i] = iceSheet[i] ? 0 : energy * size;
+    if (!iceSheet[i] && npp[i] >= HERBIVORE_NPP && area >= HERBIVORE_LANDMASS_KM2) {
+      megafauna[i] = MEGAFAUNA_HERBIVORES | (area >= PREDATOR_LANDMASS_KM2 ? MEGAFAUNA_PREDATORS : 0);
+    }
+  }
+  return { lineage, realm, endemism, richness, megafauna, landmass, landmassAreas: areas };
+}

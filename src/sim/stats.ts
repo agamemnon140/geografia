@@ -7,6 +7,7 @@ import type { Grid } from './grid/grid.ts';
 import type { LakeInfo } from './hydrology/routing.ts';
 import { VEGETATION_NAMES } from './biosphere/flora.ts';
 import { MINERAL_COUNT } from './resources/minerals.ts';
+import { LINEAGE_COUNT } from './tectonics/crust.ts';
 
 /** Per-world summary statistics (DESIGN 3.6). */
 
@@ -93,6 +94,10 @@ export interface WorldStats {
   landNppGtC: number;
   /** Land fraction per vegetation class, in biosphere/flora.ts VEGETATION_NAMES order (index 0, the ocean, stays 0). */
   vegetationShares: number[];
+  /** Lineages that dominate more than a million km^2 of land (M23). */
+  realmCount: number;
+  /** Area-weighted endemism over the land. */
+  meanEndemism: number;
 }
 
 export interface ReliefFields {
@@ -135,6 +140,8 @@ export interface BiomeFields {
   /** g C/m^2/yr. */
   npp: Float64Array;
   vegetation: Uint8Array;
+  realm: Uint8Array;
+  endemism: Float64Array;
 }
 
 export interface ResourceFields {
@@ -185,6 +192,8 @@ export function computeStats(grid: Grid, relief: ReliefFields, hydro: HydrologyF
   const depositCounts = new Array<number>(MINERAL_COUNT).fill(0);
   const vegetationArea = new Array<number>(VEGETATION_NAMES.length).fill(0);
   let nppSum = 0;
+  const realmArea = new Float64Array(LINEAGE_COUNT);
+  let endemismSum = 0;
   const hyps = new Array<number>(HYPSOMETRY_BINS).fill(0);
   for (let i = 0; i < n; i++) {
     const e = elevation[i] - seaLevel;
@@ -221,6 +230,8 @@ export function computeStats(grid: Grid, relief: ReliefFields, hydro: HydrologyF
       // km^2 times g/m^2 is 1e6 g; a gigaton is 1e15 g.
       nppSum += a * biome.npp[i] * 1e-9;
       vegetationArea[biome.vegetation[i]] += a;
+      if (biome.realm[i] < LINEAGE_COUNT) realmArea[biome.realm[i]] += a;
+      endemismSum += a * biome.endemism[i];
       const group = koppenGroup(biome.koppen[i]) as keyof typeof koppen;
       if (group in koppen) koppen[group] += a;
     }
@@ -325,6 +336,8 @@ export function computeStats(grid: Grid, relief: ReliefFields, hydro: HydrologyF
     depositCounts,
     landNppGtC: nppSum,
     vegetationShares: vegetationArea.map((v) => (land > 0 ? v / land : 0)),
+    realmCount: realmArea.filter((v) => v >= CONTINENT_MIN_KM2).length,
+    meanEndemism: land > 0 ? endemismSum / land : 0,
   };
 }
 

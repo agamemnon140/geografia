@@ -1,7 +1,9 @@
 import { ANNUAL, SAMPLES } from '../sim/climate/insolation.ts';
 import { KOPPEN_NAMES } from '../sim/climate/koppen.ts';
 import type { World } from '../sim/pipeline.ts';
+import { MEGAFAUNA_HERBIVORES, MEGAFAUNA_PREDATORS, REALM_NONE } from '../sim/biosphere/fauna.ts';
 import { VEGETATION_NAMES } from '../sim/biosphere/flora.ts';
+import { LINEAGE_COUNT } from '../sim/tectonics/crust.ts';
 import { MINERALS, MINERAL_COUNT, MINERAL_NAMES } from '../sim/resources/minerals.ts';
 import {
   BOUNDARY_CONVERGENT,
@@ -281,6 +283,33 @@ export const VEGETATION_COLORS: RGB[] = [
   [20, 95, 40],
   [90, 160, 140],
 ];
+
+/** The eight ancestral faunas, named by the colors that draw them (no blues). */
+export const REALM_NAMES: string[] = ['crimson', 'orange', 'gold', 'olive', 'green', 'teal', 'violet', 'rose'];
+export const REALM_COLORS: RGB[] = [
+  [190, 40, 60],
+  [235, 130, 40],
+  [240, 200, 50],
+  [140, 150, 40],
+  [50, 150, 70],
+  [40, 150, 140],
+  [130, 80, 180],
+  [225, 120, 160],
+];
+const ENDEMISM_RAMP: Stop[] = [
+  [0, [225, 222, 215]],
+  [0.5, [205, 130, 170]],
+  [1, [120, 20, 90]],
+];
+const RICHNESS_RAMP: Stop[] = [
+  [0, [225, 222, 215]],
+  [0.3, [200, 190, 110]],
+  [0.6, [160, 120, 50]],
+  [1, [90, 40, 20]],
+];
+const MEGAFAUNA_NONE: RGB = [215, 212, 205];
+const MEGAFAUNA_HERBIVORE_COLOR: RGB = [210, 170, 90];
+const MEGAFAUNA_PREDATOR_COLOR: RGB = [150, 60, 40];
 
 const LAKE_COLOR: RGB = [40, 120, 210];
 export const RIVER_COLOR: RGB = [20, 70, 190];
@@ -639,7 +668,80 @@ export const LAYERS: Layer[] = [
       return VEGETATION_COLORS[world.vegetation[px.cell]] ?? [0, 0, 0];
     },
   },
+  // Fauna (M23): realms from the lineages the plates carried, endemism, richness, megafauna.
+  {
+    id: 'realms',
+    name: 'Faunal realms',
+    group: 'life',
+    legend: {
+      kind: 'categories',
+      items: REALM_NAMES.map((name, k): { color: RGB; label: string } => ({ color: REALM_COLORS[k], label: `${name} lineage` })).concat([
+        { color: LAND_WASH, label: 'paler where the dominant lineage holds a smaller share (a mixed fauna)' },
+      ]),
+    },
+    relief: 'light',
+    cellColor: (world, i) => realmColor(world, i),
+    smooth: (world, px) => (relief(world, px) < 0 ? koppenSea(relief(world, px)) : realmColor(world, px.cell)),
+  },
+  {
+    id: 'endemism',
+    name: 'Endemism',
+    group: 'life',
+    legend: { kind: 'ramp', stops: ENDEMISM_RAMP, unit: 'share of the fauna found on no other landmass' },
+    relief: 'light',
+    cellColor: (world, i) => (world.elevation[i] < world.seaLevel ? koppenSea(world.elevation[i] - world.seaLevel) : world.lake[i] >= 0 ? LAKE_COLOR : ramp(ENDEMISM_RAMP, world.endemism[i])),
+    smooth: (world, px) => {
+      const rel = relief(world, px);
+      return rel < 0 ? koppenSea(rel) : world.lake[px.cell] >= 0 ? LAKE_COLOR : ramp(ENDEMISM_RAMP, px.interp(world.endemism));
+    },
+  },
+  {
+    id: 'richness',
+    name: 'Species richness',
+    group: 'life',
+    legend: { kind: 'ramp', stops: RICHNESS_RAMP, unit: 'index 0 to 1: productivity (species-energy) × landmass size (species-area)' },
+    relief: 'light',
+    cellColor: (world, i) => (world.elevation[i] < world.seaLevel ? koppenSea(world.elevation[i] - world.seaLevel) : world.lake[i] >= 0 ? LAKE_COLOR : ramp(RICHNESS_RAMP, world.richness[i])),
+    smooth: (world, px) => {
+      const rel = relief(world, px);
+      return rel < 0 ? koppenSea(rel) : world.lake[px.cell] >= 0 ? LAKE_COLOR : ramp(RICHNESS_RAMP, px.interp(world.richness));
+    },
+  },
+  {
+    id: 'megafauna',
+    name: 'Megafauna',
+    group: 'life',
+    legend: {
+      kind: 'categories',
+      items: [
+        { color: MEGAFAUNA_PREDATOR_COLOR, label: 'large herbivores and large predators (productive ground on a landmass above a million km²)' },
+        { color: MEGAFAUNA_HERBIVORE_COLOR, label: 'large herbivores only (a landmass above 200,000 km²)' },
+        { color: MEGAFAUNA_NONE, label: 'none: too little growth, ice, or too small a landmass' },
+      ],
+    },
+    relief: 'light',
+    cellColor: (world, i) => megafaunaColor(world, i),
+    smooth: (world, px) => (relief(world, px) < 0 ? koppenSea(relief(world, px)) : megafaunaColor(world, px.cell)),
+  },
 ];
+
+function realmColor(world: World, i: number): RGB {
+  const rel = world.elevation[i] - world.seaLevel;
+  if (rel < 0) return koppenSea(rel);
+  if (world.lake[i] >= 0) return LAKE_COLOR;
+  const k = world.realm[i];
+  if (k === REALM_NONE || k >= LINEAGE_COUNT) return LAND_WASH;
+  const share = world.lineage[i * LINEAGE_COUNT + k];
+  return mix(LAND_WASH, REALM_COLORS[k], 0.35 + 0.65 * share);
+}
+
+function megafaunaColor(world: World, i: number): RGB {
+  const rel = world.elevation[i] - world.seaLevel;
+  if (rel < 0) return koppenSea(rel);
+  if (world.lake[i] >= 0) return LAKE_COLOR;
+  const bits = world.megafauna[i];
+  return bits & MEGAFAUNA_PREDATORS ? MEGAFAUNA_PREDATOR_COLOR : bits & MEGAFAUNA_HERBIVORES ? MEGAFAUNA_HERBIVORE_COLOR : MEGAFAUNA_NONE;
+}
 
 /** The land washed pale and the sea dim, so marks and potentials carry the color. */
 function mutedLand(rel: number): RGB {

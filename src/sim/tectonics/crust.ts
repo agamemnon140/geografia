@@ -217,3 +217,21 @@ export const OIL_MIN_C = 18;
 export const SHELF_DEPTH_M = 500;
 export const DELTA_COAL_SHARE = 0.5;
 export const EVAPORITE_KM_PER_STEP = 0.01;
+
+/**
+ * Fauna lineages (M23). Every land parcel carries a vector over
+ * LINEAGE_COUNT ancestral faunas, seeded by angular sector around the
+ * supercontinent; at each fluvial pass the vector moves halfway to its land
+ * neighbors' mean (diffusion along the land, about 700 km over a 200-step
+ * history: a toy for dispersal, which keeps a continent's regions distinct)
+ * and 1% toward its landmass's mean (long-range exchange); deserts and
+ * ground above 2,500 m pass faunas at a third of the rate; nothing crosses
+ * the sea. There is no speciation: isolation preserves a fauna, it does not
+ * create one.
+ */
+export const LINEAGE_COUNT = 8;
+export const LINEAGE_DIFFUSION = 0.5;
+export const LINEAGE_LANDMASS_MIXING = 0.01;
+export const LINEAGE_BARRIER = 0.3;
+export const LINEAGE_DESERT_MM = 250;
+export const LINEAGE_MOUNTAIN_M = 2500;
