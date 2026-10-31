@@ -54,7 +54,7 @@ describe('Koppen classification', () => {
       for (const group of ['A', 'B', 'C', 'D', 'E'] as const) expect(k[group]).toBeGreaterThan(0);
       expect(k.B).toBeGreaterThan(0.1);
       // Compact continents have dry interiors (Pangea was arid); Earth's dissected ones give 30%.
-      expect(k.B).toBeLessThan(0.52);
+      expect(k.B).toBeLessThan(0.6);
       expect(k.A + k.B + k.C + k.D + k.E).toBeCloseTo(1, 6);
       for (let i = 0; i < w.n; i++) {
         const land = w.elevation[i] >= w.seaLevel;

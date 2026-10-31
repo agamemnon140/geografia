@@ -124,6 +124,38 @@ export const RIFT_POLE_MARGIN = 0.17;
 export const SLAB_PULL_RATE = 0.03;
 export const SLAB_PULL_SPEED_CELLS = 0.35;
 export const SLAB_PULL_SATURATION_CELLS = 30;
+/**
+ * Back-arc opening by slab rollback (DESIGN 3.3, M14). Old, dense sea floor
+ * sinks steeply and its trench retreats; the overriding plate's arc and
+ * forearc follow it and a marginal sea opens behind them (the Sea of Japan,
+ * the Tyrrhenian, the Caribbean behind the Antilles). The floor going down
+ * must be this old (steps) along a trench this long (cells); the chance per
+ * check; the width of the strip that becomes the arc plate (cells) and its
+ * minimum size; its speed toward the trench (cells per step, range).
+ */
+export const ROLLBACK_MIN_AGE = 70;
+export const ROLLBACK_MIN_TRENCH = 12;
+export const ROLLBACK_PROBABILITY = 0.12;
+export const ROLLBACK_WIDTH = 3;
+export const ROLLBACK_MIN_CELLS = 20;
+/** Only the margin goes with the arc: continental crust at least this thick (a craton) stays with the parent. */
+export const ROLLBACK_MAX_CONTINENTAL_KM = 32;
+export const ROLLBACK_RATE_CELLS: [number, number] = [0.15, 0.3];
+/** A plate waits this many steps between margin events (back-arc openings, sliver captures), and plates never exceed this count. */
+export const MARGIN_EVENT_LOCK_STEPS = 80;
+export const MAX_PLATES = 22;
+/**
+ * Sliver capture at a transform margin (M14): where continental crust slides
+ * past an oceanic plate, a strip of the coast this wide (cells) and at least
+ * this long can pass to the oceanic plate and travel with it (Baja California
+ * on the Pacific plate, the Gulf of California opening behind it); the chance
+ * per check.
+ */
+export const SLIVER_WIDTH = 2;
+export const SLIVER_MIN_LENGTH = 8;
+export const SLIVER_PROBABILITY = 0.15;
+/** A coast counts as sliding when the relative motion across it is this oblique or more (cosine of the angle to the boundary normal). */
+export const SLIVER_MAX_NORMAL_COSINE = 0.6;
 /** Locked steps before a plate welded to a neighbor along a continental suture merges into it. */
 export const MERGE_LOCK_STEPS = 40;
 /** Minimum continental suture length, in cells, for a merger. */

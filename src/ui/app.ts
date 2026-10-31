@@ -202,7 +202,7 @@ export function mountApp(root: HTMLElement): void {
       ['Grid level', `${w.level} (${w.n.toLocaleString()} cells)${w.preview ? ', preview' : ''}${w.reference ? `, relief from ${w.reference}` : ''}`],
       ['Tectonic step', w.reference ? 'measured relief, no tectonic history' : `${w.steps} of ${w.params.tectonicAge}`],
       ['Active plates', `${s.activePlates} of ${w.plates.length} ever (${w.params.plateCount} at the start)`],
-      ['Plate events', `${w.events.filter((e) => e.type === 'rift').length} rifts (${w.events.filter((e) => e.type === 'fail').length} failed), ${w.events.filter((e) => e.type === 'merge').length} mergers`],
+      ['Plate events', `${w.events.filter((e) => e.type === 'rift').length} rifts (${w.events.filter((e) => e.type === 'fail').length} failed), ${w.events.filter((e) => e.type === 'merge').length} mergers, ${w.events.filter((e) => e.type === 'rollback').length} back-arc basins, ${w.events.filter((e) => e.type === 'capture').length} coastal slivers`],
       ['Ocean / land', `${pct(s.oceanFraction)} / ${pct(s.landFraction)}`],
       ['Continents', `${s.continents} (largest ${(s.largestLandmassKm2 / 1e6).toFixed(1)} million km²), ${s.islands} islands`],
       ['Continental crust', pct(s.continentalFraction)],
@@ -229,6 +229,8 @@ export function mountApp(root: HTMLElement): void {
   const eventsText = (w: World): string => w.events
     .map((e) => e.type === 'rift' ? `step ${e.step}: plate ${e.plate} rifted from plate ${e.other}`
       : e.type === 'fail' ? `step ${e.step}: the rift failed, plate ${e.plate} welded back onto plate ${e.other}`
+      : e.type === 'rollback' ? `step ${e.step}: a back-arc basin opened off plate ${e.other}; its arc became plate ${e.plate}`
+      : e.type === 'capture' ? `step ${e.step}: plate ${e.plate} captured a sliver of plate ${e.other}'s coast`
       : `step ${e.step}: plate ${e.plate} merged into plate ${e.other}`)
     .join('\n');
 

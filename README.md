@@ -47,8 +47,10 @@ currents, sstAnomaly, plates, crustAge, thickness, cells.
   and earns its shapes from what follows: slab pull steers the plates,
   rifts split continents unevenly (some fail and leave gulfs), collisions
   close the seaways between welded continents, island arcs grow into land
-  and accrete, active margins thicken into cordilleras. The events are
-  listed under the statistics.
+  and accrete, active margins thicken into cordilleras, trenches roll back
+  and open marginal seas behind arcs that become small plates, and sliding
+  coasts lose slivers that travel with the oceanic plate next door. The
+  events are listed under the statistics.
 - Three views in the bar above the stage: Map (wheel zooms around the
   cursor, drag pans with wrap-around, double-click resets), Globe (drag to
   turn, click to inspect; software-rendered, no WebGL) and Compare (A

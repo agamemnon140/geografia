@@ -29,6 +29,8 @@ import {
   HOTSPOT_COUNT,
   HOTSPOT_RATE_KM,
   ISOSTASY_M_PER_KM,
+  MARGIN_EVENT_LOCK_STEPS,
+  MAX_PLATES,
   MERGE_LOCK_STEPS,
   MERGE_MIN_SUTURE,
   MIN_THRUST_KM,
@@ -44,6 +46,17 @@ import {
   RIFT_OFFSET,
   RIFT_PROBABILITY,
   RIFT_RATE_CELLS,
+  ROLLBACK_MAX_CONTINENTAL_KM,
+  ROLLBACK_MIN_AGE,
+  ROLLBACK_MIN_CELLS,
+  ROLLBACK_MIN_TRENCH,
+  ROLLBACK_PROBABILITY,
+  ROLLBACK_RATE_CELLS,
+  ROLLBACK_WIDTH,
+  SLIVER_MAX_NORMAL_COSINE,
+  SLIVER_MIN_LENGTH,
+  SLIVER_PROBABILITY,
+  SLIVER_WIDTH,
   SLAB_PULL_RATE,
   SLAB_PULL_SATURATION_CELLS,
   SLAB_PULL_SPEED_CELLS,
@@ -66,10 +79,15 @@ import { eulerVector, perturbPlates, randomUnit, rotatePlates, setEulerVector, v
 import { apply, applyTranspose } from './rotation.ts';
 import { normalize3 } from '../grid/geometry.ts';
 
-/** A plate birth (rift: `plate` split off `other`), a failed rift (`plate` welded back onto `other`) or a death (merge: `plate` joined `other`). */
+/**
+ * A plate event: a rift (`plate` split off `other`), a failed rift (`plate`
+ * welded back onto `other`), a merger (`plate` joined `other`), a back-arc
+ * opening (the arc became `plate`, off `other`) or a sliver capture
+ * (`plate` took a strip of `other`'s coast).
+ */
 export interface TectonicEvent {
   step: number;
-  type: 'rift' | 'fail' | 'merge';
+  type: 'rift' | 'fail' | 'merge' | 'rollback' | 'capture';
   plate: number;
   other: number;
 }
@@ -123,6 +141,8 @@ export class TectonicsSim {
   private collisionCells: number[] = [];
   /** Rifts that will fail: the child welds back onto its parent at the given step. */
   private failingRifts: { child: number; parent: number; step: number }[] = [];
+  /** Step of each plate's last back-arc opening or sliver capture. */
+  private lastMarginEvent: number[] = [];
   private pullSum = new Float64Array(0);
   private pullCells = new Int32Array(0);
   private eventRng: Rng;
@@ -176,6 +196,7 @@ export class TectonicsSim {
       this.slowSteps.push(0);
       this.dead.push(false);
       this.collisionCells.push(0);
+      this.lastMarginEvent.push(-MARGIN_EVENT_LOCK_STEPS);
     }
     const plateOf = start.plateOf;
     const isContinental = start.isContinental;
@@ -382,6 +403,262 @@ export class TectonicsSim {
         this.rift(p, this.eventRng.float() < RIFT_FAIL_PROBABILITY);
       }
     }
+    // Margin events (M14): back-arc openings where old floor goes down, sliver captures at transforms.
+    for (let p = 0; p < count && this.plates.length < MAX_PLATES; p++) {
+      if (this.dead[p] || this.step - this.lastMarginEvent[p] < MARGIN_EVENT_LOCK_STEPS) continue;
+      const trench = this.findRollback(p);
+      if (trench && trench.cells.length >= ROLLBACK_MIN_TRENCH && trench.meanAge >= ROLLBACK_MIN_AGE && this.eventRng.float() < ROLLBACK_PROBABILITY) {
+        if (this.rollback(p, trench.cells) >= 0) continue;
+      }
+      const coast = this.findSliver(p);
+      if (coast && coast.cells.length >= SLIVER_MIN_LENGTH && this.eventRng.float() < SLIVER_PROBABILITY) this.capture(p, coast.other, coast.cells);
+    }
+  }
+
+  /** A new plate with the same frame and rotation as its parent at this instant. */
+  private newPlate(parent: Plate): number {
+    const id = this.pool.addPlate(this.grid.n);
+    this.plates.push({ id, axis: [parent.axis[0], parent.axis[1], parent.axis[2]], rate: parent.rate, rotation: Float64Array.from(parent.rotation) });
+    this.slowSteps.push(0);
+    this.dead.push(false);
+    this.collisionCells.push(0);
+    this.lastMarginEvent.push(this.step);
+    return id;
+  }
+
+  /**
+   * The longest trench along which plate p overrides sinking oceanic crust:
+   * the neighbor plate, p's cells on the trench and the mean age of the floor
+   * going down. Null when p overrides nothing.
+   */
+  findRollback(p: number): { other: number; cells: number[]; meanAge: number } | null {
+    const grid = this.grid;
+    const pool = this.pool;
+    const wPlate = this.wPlate;
+    const claim = this.wParcel;
+    const boundary = this.boundary;
+    const found = new Map<number, { cells: number[]; age: number }>();
+    for (let j = 0; j < grid.n; j++) {
+      if (wPlate[j] !== p || boundary[j] !== BOUNDARY_CONVERGENT) continue;
+      for (let t = grid.nbStart[j]; t < grid.nbStart[j + 1]; t++) {
+        const nb = grid.nb[t];
+        const q = wPlate[nb];
+        if (q === p || boundary[nb] !== BOUNDARY_SUBDUCTING) continue;
+        const i = claim[nb];
+        if (pool.crustType[i] === CONTINENTAL && pool.thickness[i] >= BUOYANT_THICKNESS_KM) continue;
+        let entry = found.get(q);
+        if (!entry) {
+          entry = { cells: [], age: 0 };
+          found.set(q, entry);
+        }
+        entry.cells.push(j);
+        entry.age += pool.age[i];
+        break;
+      }
+    }
+    let best: { other: number; cells: number[]; meanAge: number } | null = null;
+    for (const [q, entry] of found) {
+      if (!best || entry.cells.length > best.cells.length) best = { other: q, cells: entry.cells, meanAge: entry.age / entry.cells.length };
+    }
+    return best;
+  }
+
+  /**
+   * Back-arc opening: plate p's cells within ROLLBACK_WIDTH of the trench
+   * (forearc and arc) become a new plate that moves toward the trench, and a
+   * marginal sea opens behind it as the gap fills with thinned margins and
+   * new sea floor. Returns the arc plate's id, or -1 when the strip is too
+   * small.
+   */
+  rollback(p: number, trench: number[]): number {
+    const grid = this.grid;
+    const pool = this.pool;
+    const xyz = grid.xyz;
+    const claim = this.wParcel;
+    const wPlate = this.wPlate;
+    const stamp = ++this.stampCounter;
+    const st = this.stamp;
+    let frontier: number[] = [];
+    const taken: number[] = [];
+    for (const j of trench) {
+      if (st[j] === stamp) continue;
+      st[j] = stamp;
+      frontier.push(j);
+      taken.push(j);
+    }
+    for (let d = 1; d < ROLLBACK_WIDTH && frontier.length > 0; d++) {
+      const next: number[] = [];
+      for (const j of frontier) {
+        for (let t = grid.nbStart[j]; t < grid.nbStart[j + 1]; t++) {
+          const nb = grid.nb[t];
+          if (st[nb] === stamp || wPlate[nb] !== p) continue;
+          const i = claim[nb];
+          if (pool.crustType[i] === CONTINENTAL && pool.thickness[i] >= ROLLBACK_MAX_CONTINENTAL_KM) continue;
+          st[nb] = stamp;
+          next.push(nb);
+          taken.push(nb);
+        }
+      }
+      frontier = next;
+    }
+    if (taken.length < ROLLBACK_MIN_CELLS) return -1;
+    const parent = this.plates[p];
+    const id = this.newPlate(parent);
+    const parentIndex = pool.frameIndex[p];
+    const childIndex = pool.frameIndex[id];
+    let cx = 0;
+    let cy = 0;
+    let cz = 0;
+    for (const j of taken) {
+      const i = claim[j];
+      if (i < 0 || !pool.alive[i] || pool.plate[i] !== p) continue;
+      const k = pool.frameCell[i];
+      parentIndex[k] = -1;
+      childIndex[k] = i;
+      pool.plate[i] = id;
+      cx += xyz[3 * j];
+      cy += xyz[3 * j + 1];
+      cz += xyz[3 * j + 2];
+    }
+    // The arc moves from its centroid toward the trench's centroid: omega = c cross n carries c along n.
+    let tx = 0;
+    let ty = 0;
+    let tz = 0;
+    for (const j of trench) {
+      tx += xyz[3 * j];
+      ty += xyz[3 * j + 1];
+      tz += xyz[3 * j + 2];
+    }
+    const c = normalize3(cx, cy, cz);
+    const along = tx * c[0] + ty * c[1] + tz * c[2];
+    const nx = tx - along * c[0];
+    const ny = ty - along * c[1];
+    const nz = tz - along * c[2];
+    const nlen = Math.hypot(nx, ny, nz);
+    if (nlen > 1e-9) {
+      const rate = (this.cellAngle * this.speed * this.eventRng.range(ROLLBACK_RATE_CELLS[0], ROLLBACK_RATE_CELLS[1])) / nlen;
+      const [ex, ey, ez] = eulerVector(parent);
+      setEulerVector(this.plates[id], ex + rate * (c[1] * nz - c[2] * ny), ey + rate * (c[2] * nx - c[0] * nz), ez + rate * (c[0] * ny - c[1] * nx));
+    }
+    this.lastMarginEvent[p] = this.step;
+    this.events.push({ step: this.step, type: 'rollback', plate: id, other: p });
+    return id;
+  }
+
+  /**
+   * The longest stretch of plate p's continental coast sliding past an
+   * oceanic plate (a transform margin): that plate and p's coastal cells.
+   */
+  findSliver(p: number): { other: number; cells: number[] } | null {
+    const grid = this.grid;
+    const pool = this.pool;
+    const wPlate = this.wPlate;
+    const claim = this.wParcel;
+    const boundary = this.boundary;
+    const xyz = grid.xyz;
+    const tmp = this.tmp;
+    const found = new Map<number, number[]>();
+    for (let j = 0; j < grid.n; j++) {
+      if (wPlate[j] !== p || boundary[j] === BOUNDARY_NONE) continue;
+      const i = claim[j];
+      if (pool.crustType[i] !== CONTINENTAL || pool.thickness[i] < BUOYANT_THICKNESS_KM) continue;
+      for (let t = grid.nbStart[j]; t < grid.nbStart[j + 1]; t++) {
+        const nb = grid.nb[t];
+        const q = wPlate[nb];
+        if (q === p || this.dead[q]) continue;
+        const o = claim[nb];
+        if (pool.crustType[o] === CONTINENTAL && pool.thickness[o] >= BUOYANT_THICKNESS_KM) continue;
+        // Sliding: the relative motion is mostly along the coast, not across it.
+        velocityAt(this.plates[q], xyz[3 * j], xyz[3 * j + 1], xyz[3 * j + 2], tmp, 0);
+        velocityAt(this.plates[p], xyz[3 * j], xyz[3 * j + 1], xyz[3 * j + 2], tmp, 3);
+        const vx = tmp[0] - tmp[3];
+        const vy = tmp[1] - tmp[4];
+        const vz = tmp[2] - tmp[5];
+        const nx = xyz[3 * nb] - xyz[3 * j];
+        const ny = xyz[3 * nb + 1] - xyz[3 * j + 1];
+        const nz = xyz[3 * nb + 2] - xyz[3 * j + 2];
+        const vlen = Math.hypot(vx, vy, vz);
+        if (vlen < 1e-15) continue;
+        const cosine = Math.abs(vx * nx + vy * ny + vz * nz) / (vlen * Math.hypot(nx, ny, nz));
+        if (cosine > SLIVER_MAX_NORMAL_COSINE) continue;
+        let cells = found.get(q);
+        if (!cells) {
+          cells = [];
+          found.set(q, cells);
+        }
+        cells.push(j);
+        break;
+      }
+    }
+    let best: { other: number; cells: number[] } | null = null;
+    for (const [q, cells] of found) if (!best || cells.length > best.cells.length) best = { other: q, cells };
+    return best;
+  }
+
+  /**
+   * Sliver capture: the continental cells of plate p within SLIVER_WIDTH of
+   * the given coast pass to the other plate, resampled into its frame (as in a
+   * merger), and travel with it from now on. Returns how many parcels moved.
+   */
+  capture(p: number, other: number, coast: number[]): number {
+    const grid = this.grid;
+    const pool = this.pool;
+    const xyz = grid.xyz;
+    const claim = this.wParcel;
+    const wPlate = this.wPlate;
+    const tmp = this.tmp;
+    const stamp = ++this.stampCounter;
+    const st = this.stamp;
+    let frontier: number[] = [];
+    const taken: number[] = [];
+    for (const j of coast) {
+      if (st[j] === stamp) continue;
+      st[j] = stamp;
+      frontier.push(j);
+      taken.push(j);
+    }
+    for (let d = 1; d < SLIVER_WIDTH && frontier.length > 0; d++) {
+      const next: number[] = [];
+      for (const j of frontier) {
+        for (let t = grid.nbStart[j]; t < grid.nbStart[j + 1]; t++) {
+          const nb = grid.nb[t];
+          if (st[nb] === stamp || wPlate[nb] !== p || pool.crustType[claim[nb]] !== CONTINENTAL) continue;
+          st[nb] = stamp;
+          next.push(nb);
+          taken.push(nb);
+        }
+      }
+      frontier = next;
+    }
+    const indexP = pool.frameIndex[p];
+    const indexQ = pool.frameIndex[other];
+    const rq = this.plates[other].rotation;
+    let moved = 0;
+    for (const j of taken) {
+      const i = claim[j];
+      if (i < 0 || !pool.alive[i] || pool.plate[i] !== p) continue;
+      // The parcel sits under world cell j now; find that spot in the other plate's frame.
+      applyTranspose(rq, xyz[3 * j], xyz[3 * j + 1], xyz[3 * j + 2], tmp, 0);
+      const kq = nearestCell(grid, tmp[0], tmp[1], tmp[2], j);
+      indexP[pool.frameCell[i]] = -1;
+      const existing = indexQ[kq];
+      if (existing >= 0 && pool.alive[existing]) {
+        this.fuse(existing, i);
+        pool.plate[i] = other;
+        pool.frameCell[i] = kq;
+        pool.release(i);
+      } else {
+        pool.plate[i] = other;
+        pool.frameCell[i] = kq;
+        indexQ[kq] = i;
+      }
+      moved++;
+    }
+    if (moved === 0) return 0;
+    this.lastMarginEvent[p] = this.step;
+    this.lastMarginEvent[other] = this.step;
+    this.events.push({ step: this.step, type: 'capture', plate: other, other: p });
+    return moved;
   }
 
   /** Continental area carried by a plate, km^2 (world view). */
@@ -439,7 +716,6 @@ export class TectonicsSim {
     const pool = this.pool;
     const grid = this.grid;
     const xyz = grid.xyz;
-    const n = grid.n;
     let cx = 0;
     let cy = 0;
     let cz = 0;
@@ -499,12 +775,8 @@ export class TectonicsSim {
 
     // The new plate: same frame and rotation as the parent at this instant.
     const parent = this.plates[p];
-    const id = pool.addPlate(n);
-    const child: Plate = { id, axis: [parent.axis[0], parent.axis[1], parent.axis[2]], rate: parent.rate, rotation: Float64Array.from(parent.rotation) };
-    this.plates.push(child);
-    this.slowSteps.push(0);
-    this.dead.push(false);
-    this.collisionCells.push(0);
+    const id = this.newPlate(parent);
+    const child = this.plates[id];
     const parentIndex = pool.frameIndex[p];
     const childIndex = pool.frameIndex[id];
     let sx = 0;

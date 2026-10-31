@@ -10,7 +10,7 @@ import {
   BOUNDARY_SUBDUCTING,
   TectonicsSim,
 } from '../src/sim/tectonics/simulation.ts';
-import { thicknessCap } from '../src/sim/tectonics/crust.ts';
+import { MAX_PLATES, thicknessCap } from '../src/sim/tectonics/crust.ts';
 
 const SEEDS = [1, 2, 3];
 const worlds: World[] = SEEDS.map((seed) => build({ ...EARTH, seed }));
@@ -68,7 +68,8 @@ describe('tectonics with the Earth preset', () => {
         expect(w.crustAge[i]).toBeGreaterThanOrEqual(0);
       }
       expect(w.stats.activePlates).toBeGreaterThanOrEqual(1);
-      expect(w.stats.activePlates).toBeLessThanOrEqual(EARTH.plateCount);
+      // Rifts, back-arc openings and captures add plates over the run, up to the hard limit.
+      expect(w.stats.activePlates).toBeLessThanOrEqual(MAX_PLATES);
     }
   });
 
