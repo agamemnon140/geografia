@@ -1,4 +1,4 @@
-import { koppenName, precipitationAt, temperatureAt, windAt } from '../render/layers.ts';
+import { cloudAt, koppenName, precipitationAt, temperatureAt, windAt } from '../render/layers.ts';
 import { ANNUAL, SAMPLES } from '../sim/climate/insolation.ts';
 import { Grid, cellAreasKm2 } from '../sim/grid/grid.ts';
 import type { World } from '../sim/pipeline.ts';
@@ -110,11 +110,15 @@ export function explainCell(world: World, cell: number, sample: number): Section
   const continentalTerm = world.temperatureContinental[cell];
   const current = world.sstAnomaly[cell];
   const [u, v] = windAt(world, cell, sample);
+  const [cLo, cHi] = range((s) => cloudAt(world, cell, s));
+  const sun = world.sunshineHours[cell];
   const climate: string[] = [
     `temperature ${t.toFixed(1)} °C annual (${tLo.toFixed(1)} to ${tHi.toFixed(1)} over the year)`,
-    `  = global ${world.globalMeanTemperature.toFixed(1)} ${signed(balanceTerm, 1)} energy balance (sunlight, albedo, transport) ` +
+    `  = global ${world.globalMeanTemperature.toFixed(1)} ${signed(balanceTerm, 1)} energy balance (sunlight, clouds, albedo, transport) ` +
       `${signed(lapseTerm, 1)} altitude ${signed(continentalTerm, 1)} continentality ${signed(current, 1)} currents`,
     `insolation  ${world.insolationAnnual[cell].toFixed(0)} W/m² annual mean at the top of the atmosphere`,
+    `sunshine    ${Math.round(sun).toLocaleString('en-US')} h/yr (${Math.round(sun / 12)} clear-day equivalents), ` +
+      `clouds ${(100 * world.cloudAnnual[cell]).toFixed(0)}% (${(100 * cLo).toFixed(0)} to ${(100 * cHi).toFixed(0)}% over the year)`,
     `wind        ${sampleName(sample)}: ${Math.hypot(u, v).toFixed(1)} m/s toward ${bearing(u, v)}`,
   ];
   if (world.basin[cell] >= 0) {

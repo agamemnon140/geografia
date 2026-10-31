@@ -221,6 +221,7 @@ export function mountApp(root: HTMLElement): void {
       ['Seasonal range 40–60°', `land ${s.landSeasonalRange.toFixed(0)}, ocean ${s.oceanSeasonalRange.toFixed(0)} °C`],
       ['Circulation', `${s.circulationCells} cells per hemisphere, Hadley edge ${s.hadleyEdgeDeg.toFixed(0)}°`],
       ['Precipitation', `${s.meanPrecipitation.toFixed(0)} mm/yr, land ${s.meanLandPrecipitation.toFixed(0)}`],
+      ['Clouds and sunshine', `${pct(s.meanCloudFraction, 0)} of the sky; land gets ${s.meanLandSunshineHours.toFixed(0)} h/yr of sun; clouds reflect ${(-s.cloudShortwaveForcing).toFixed(0)} and trap ${s.cloudLongwaveForcing.toFixed(0)} W/m²`],
       ['Desert', `${pct(s.desertFraction)} of land`],
       ['Ice sheets', `${pct(s.iceSheetFraction)} of land`],
       ['Sea ice', `${pct(s.permanentSeaIceFraction)} of ocean all year, ${pct(s.seasonalSeaIceFraction)} seasonal`],

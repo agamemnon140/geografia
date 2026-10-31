@@ -1,4 +1,5 @@
 import { Grid, cellAreasKm2 } from '../grid/grid.ts';
+import { MIN_SATURATED_COLUMN_MM, SATURATION_OVER_EQUILIBRIUM, cloudCover, cloudLongwave, deepCloud } from './clouds.ts';
 import { SAMPLES } from './insolation.ts';
 import { meshGeometry, type MeshGeometry } from './mesh.ts';
 import { levelsUpTo, prolongate } from './multilevel.ts';
@@ -51,6 +52,12 @@ export interface MoistureFields {
   orographic: Float64Array;
   /** Share due to wind convergence, mm per year. */
   convergence: Float64Array;
+  /** Cloud cover per sample, sample-major, 0 to 1 (clouds.ts). */
+  cloud: Float64Array;
+  /** Annual-mean cloud cover. */
+  cloudAnnual: Float64Array;
+  /** Annual-mean longwave the clouds trap, W/m^2 (clouds.ts). */
+  cloudLongwave: Float64Array;
 }
 
 /** Evaporation from open water at a surface temperature, mm per year. */
@@ -71,6 +78,9 @@ interface Level {
   rainout: Float64Array;
   oroShare: Float64Array;
   convShare: Float64Array;
+  /** Lifting (orographic plus convergent rainout) and sinking (divergence plus descent) relative to the base rainout, for the cloud cover. */
+  lifting: Float64Array;
+  sinking: Float64Array;
   source: Float64Array;
   q: Float64Array;
 }
@@ -84,6 +94,7 @@ export function computeMoisture(
   windU: Float64Array,
   windV: Float64Array,
   temperature: Float64Array,
+  coldWater: Float64Array | null = null,
 ): MoistureFields {
   const nFine = grid.n;
   const radiusM = radiusKm * 1000;
@@ -101,7 +112,8 @@ export function computeMoisture(
     return {
       grid: g, mesh, areaKm2: cellAreasKm2(g, radiusKm), hop, surface, water,
       inflow: new Float64Array(edges), denom: new Float64Array(g.n), rainout: new Float64Array(g.n),
-      oroShare: new Float64Array(g.n), convShare: new Float64Array(g.n), source: new Float64Array(g.n), q: new Float64Array(g.n),
+      oroShare: new Float64Array(g.n), convShare: new Float64Array(g.n), lifting: new Float64Array(g.n), sinking: new Float64Array(g.n),
+      source: new Float64Array(g.n), q: new Float64Array(g.n),
     };
   });
   const fine = levels[levels.length - 1];
@@ -110,6 +122,10 @@ export function computeMoisture(
   const evaporation = new Float64Array(nFine);
   const orographic = new Float64Array(nFine);
   const convergence = new Float64Array(nFine);
+  const cloud = new Float64Array(SAMPLES * nFine);
+  const cloudAnnual = new Float64Array(nFine);
+  const longwave = new Float64Array(nFine);
+  const baseRate = 1 / (RAINOUT_DAYS * 86400);
 
   for (let s = 0; s < SAMPLES; s++) {
     const base = s * nFine;
@@ -128,14 +144,25 @@ export function computeMoisture(
       evaporation[i] += e / SAMPLES;
       orographic[i] += (p * fine.oroShare[i]) / SAMPLES;
       convergence[i] += (p * fine.convShare[i]) / SAMPLES;
+      // Cloud cover (clouds.ts): the column against the saturated column, taken as the equilibrium
+      // column of a still open sea at the surface temperature (evaporation over the base rainout,
+      // cold air raining out faster) times a saturation margin; then the lifting, the sinking and
+      // the cold water of the cell.
+      const t = temperature[base + i];
+      const equilibrium = evaporationRate(t) / SECONDS_PER_YEAR / (baseRate * (1 + COLD_RAINOUT_PER_C * Math.max(0, 20 - t)));
+      const saturated = Math.max(MIN_SATURATED_COLUMN_MM, SATURATION_OVER_EQUILIBRIUM * equilibrium);
+      const cover = cloudCover(Math.min(1, fine.q[i] / saturated), fine.lifting[i], fine.sinking[i], fine.water[i] === 1, coldWater ? -coldWater[i] : 0);
+      cloud[base + i] = cover;
+      cloudAnnual[i] += cover / SAMPLES;
+      longwave[i] += cloudLongwave(cover, deepCloud(fine.lifting[i], fine.sinking[i])) / SAMPLES;
     }
   }
-  return { samples, annual, evaporation, orographic, convergence };
+  return { samples, annual, evaporation, orographic, convergence, cloud, cloudAnnual, cloudLongwave: longwave };
 }
 
 /** Transport, rainout and source coefficients of one level for one sample; `base` indexes the fine sample-major fields. */
 function buildCoefficients(level: Level, base: number, windU: Float64Array, windV: Float64Array, temperature: Float64Array): void {
-  const { grid, mesh, areaKm2, hop, surface, water, inflow, denom, rainout, oroShare, convShare, source } = level;
+  const { grid, mesh, areaKm2, hop, surface, water, inflow, denom, rainout, oroShare, convShare, lifting, sinking, source } = level;
   const baseRate = 1 / (RAINOUT_DAYS * 86400);
   for (let i = 0; i < grid.n; i++) {
     const ui = windU[base + i];
@@ -168,6 +195,10 @@ function buildCoefficients(level: Level, base: number, windU: Float64Array, wind
     rainout[i] = rate;
     oroShare[i] = oro / rate;
     convShare[i] = conv / rate;
+    // Descent and divergence do not rain out; they dry the column's cloud (the lee, the subtropical highs).
+    const sink = (lift < 0 ? -lift / MOISTURE_SCALE_HEIGHT_M : 0) + (div > 0 ? div * CONVERGENCE_RAINOUT : 0);
+    lifting[i] = (oro + conv) / (baseRate * cold);
+    sinking[i] = sink / (baseRate * cold);
     if (water[i]) {
       source[i] = evaporationRate(t) / SECONDS_PER_YEAR;
       denom[i] = out + rate;

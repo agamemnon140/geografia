@@ -49,3 +49,16 @@ export function dailyMeanInsolation(lat: number, declination: number, s0: number
   const q = (s0 / Math.PI) * (h0 * Math.sin(lat) * Math.sin(declination) + Math.cos(lat) * Math.cos(declination) * Math.sin(h0));
   return q > 0 ? q : 0;
 }
+
+/**
+ * Hours of daylight for a latitude and a declination, in hours of a 24-hour
+ * day (24 h0 / pi): 24 in the polar day, 0 in the polar night. Earth hours
+ * whatever the planet's rotation, so sunshine totals compare with Earth's
+ * climatologies.
+ */
+export function daylightHours(lat: number, declination: number): number {
+  const x = -Math.tan(lat) * Math.tan(declination);
+  if (x <= -1) return 24;
+  if (x >= 1) return 0;
+  return (24 * Math.acos(x)) / Math.PI;
+}

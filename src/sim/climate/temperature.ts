@@ -1,12 +1,14 @@
 import type { Grid } from '../grid/grid.ts';
 import { relativeGravity, type PlanetParams } from '../params.ts';
-import { ALBEDO_LAND, ALBEDO_OCEAN, solveEnergyBalance } from './ebm.ts';
+import { planetaryAlbedo, solveEnergyBalance } from './ebm.ts';
 import { SAMPLES, SOLAR_CONSTANT, dailyMeanInsolation, orbitalFactors } from './insolation.ts';
 
 /**
  * Surface temperature (DESIGN 3.5 step 2, energy balance from M9): the
  * annual mean at sea level comes from the two-dimensional energy-balance
- * model with the albedo the caller supplies (ice included); a lapse rate
+ * model with the clear-sky surface albedo the caller supplies (ice
+ * included) under the cloud cover of each sample, plus the longwave the
+ * clouds trap (M20); a lapse rate
  * proportional to gravity and a continentality term bring it to the
  * surface; the seasonal cycle is the insolation cycle through a thermal
  * filter that lags and damps it more over the ocean than over land. Ocean
@@ -43,6 +45,9 @@ export interface TemperatureFields {
   balanceTerm: Float64Array;
   lapseTerm: Float64Array;
   continentalTerm: Float64Array;
+  /** Sunlight the clouds reflect, W/m^2 (negative: absorbed minus clear-sky absorbed), and the longwave they trap, for the statistics. */
+  cloudShortwave: Float64Array;
+  cloudLongwave: Float64Array;
 }
 
 /** Lapse rate for a planet, K per km. */
@@ -57,7 +62,11 @@ export function computeTemperature(
   elevation: Float64Array,
   seaLevel: number,
   oceanDistance: Int32Array,
-  albedo: Float64Array,
+  surfaceAlbedo: Float64Array,
+  bareAlbedo: Float64Array,
+  cloud: Float64Array,
+  cloudAnnual: Float64Array,
+  cloudLongwave: Float64Array,
 ): TemperatureFields {
   const n = grid.n;
   const s0 = SOLAR_CONSTANT * params.insolation;
@@ -71,17 +80,22 @@ export function computeTemperature(
   const lapseTerm = new Float64Array(n);
   const continentalTerm = new Float64Array(n);
   const absorbed = new Float64Array(n);
+  const cloudShortwave = new Float64Array(n);
   const q = new Float64Array(SAMPLES * n);
   for (let i = 0; i < n; i++) {
     const lat = grid.lat[i];
     let sum = 0;
+    let taken = 0;
+    // Absorbed sunlight sample by sample under that sample's cloud: a clear summer counts for more than a cloudy winter.
     for (let s = 0; s < SAMPLES; s++) {
       const v = dailyMeanInsolation(lat, declinations[s], s0 * orbit[s]);
       q[s * n + i] = v;
       sum += v;
+      taken += v * (1 - planetaryAlbedo(surfaceAlbedo[i], cloud[s * n + i]));
     }
     insolationAnnual[i] = sum / SAMPLES;
-    absorbed[i] = insolationAnnual[i] * (1 - albedo[i]);
+    absorbed[i] = taken / SAMPLES;
+    cloudShortwave[i] = absorbed[i] - insolationAnnual[i] * (1 - surfaceAlbedo[i]);
   }
 
   // Annual mean from the energy balance, valid at the atmosphere's reference height: the
@@ -90,7 +104,7 @@ export function computeTemperature(
   // the lapse rate must not turn every continent into Tibet, and the sea surface sits warm
   // below the reference. The area-weighted mean surface temperature is the balance's mean.
   const balance = new Float64Array(n);
-  solveEnergyBalance(grid, params, absorbed, balance);
+  solveEnergyBalance(grid, params, absorbed, balance, undefined, undefined, cloudLongwave);
   let meanSum = 0;
   let areaSum = 0;
   let surfaceSum = 0;
@@ -118,9 +132,8 @@ export function computeTemperature(
     const tau = TAU_OCEAN + (tauLand - TAU_OCEAN) * c;
     const alpha = 1 - Math.exp(-1 / tau);
     // A bright surface reflects the summer sun: the seasonal response scales with what it absorbs,
-    // relative to bare ground or open water. Ice sheets and frozen seas swing far less than tundra.
-    const bare = land ? ALBEDO_LAND : ALBEDO_OCEAN;
-    const absorbedShare = (1 - albedo[i]) / (1 - bare);
+    // relative to bare ground or open water under the same clouds. Ice sheets and frozen seas swing far less than tundra.
+    const absorbedShare = (1 - planetaryAlbedo(surfaceAlbedo[i], cloudAnnual[i])) / (1 - planetaryAlbedo(bareAlbedo[i], cloudAnnual[i]));
     const k = (K_SEASON_OCEAN + (K_SEASON_LAND - K_SEASON_OCEAN) * c) * absorbedShare;
     const qAnnual = insolationAnnual[i];
     let filtered = qAnnual;
@@ -131,5 +144,5 @@ export function computeTemperature(
       }
     }
   }
-  return { insolationAnnual, continentality, globalMean, annual, samples, balanceTerm, lapseTerm, continentalTerm };
+  return { insolationAnnual, continentality, globalMean, annual, samples, balanceTerm, lapseTerm, continentalTerm, cloudShortwave, cloudLongwave };
 }

@@ -188,6 +188,15 @@ Revisions in M11, driven by the real Earth (section 3.9):
 
 Calibration status after M11 on the real relief: surface mean 14.5 degrees C (Earth 14.5), equator 26.9, Amazon 24 degrees and 2,700 mm, New York 13.0 (12.9 observed), Yakutsk region -12 (-9), Antarctic plateau -44 (-50), land precipitation 990 mm (Earth 800 to 900), ice sheets 15% of the land (10%), permanent sea ice 9% of the ocean (3%), Koppen A 15 / B 26 / C 16 / D 17 / E 26% of the land (Earth 19 / 30 / 14 / 25 / 13). The boreal belt is the largest remaining error: 50 to 70 N land runs 5 to 9 degrees too cold (London 1 degree against 11), so tundra replaces taiga and E grows at D's expense; the subtropical deserts are also too cool (Sahara 14 against 26, clear skies and dry surfaces not being in the balance). Build 5 s standalone.
 
+Mechanisms as built in M20 (`climate/clouds.ts`; the albedo decomposition in `ebm.ts`, the two passes in `climate.ts`):
+
+- Cloud cover per cell and sample from the moisture solver's state. A relative-humidity proxy is the column of vapor over the saturated column, taken as 1.08 times the equilibrium column of a still open sea at the surface temperature (evaporation over the base rainout, which is faster in cold air; floor 1 mm). Humidity cloud grows linearly from 5% to 80% of saturation up to a cover of 0.8; lifted cloud is 0.65 (1 - exp(-lifting)), lifting being the orographic and convergent rainout relative to the base rainout; the two share the same air, so the larger counts. Sinking air (descent in the lee, divergence under the subtropical highs, relative to the base rainout) multiplies both by 1 - 0.6 (1 - exp(-sinking / 4)). Open water carries a boundary-layer deck of 0.35 and cold current anomalies a stratus of 0.2 per degree (at most 0.8), neither cleared by sinking; the layers overlap at random.
+- Clouds in the energy balance. The surface albedos are clear-sky values (ocean 0.10, land 0.16, ice 0.56) and a cloud of albedo 0.30 sits over the covered share with the two-stream multiple reflection cloud + (1 - cloud)^2 surface / (1 - cloud surface), so clouds double the ocean's reflection and barely brighten an ice sheet; absorbed sunlight is summed sample by sample under each sample's cover. Clouds trap longwave, 38 W/m^2 per unit of low cloud and 45 under lifted (cold-topped) cloud, entered per cell on the absorbed side, so A becomes the clear-sky 237 W/m^2. The seasonal response scales with the absorbed share under the same clouds.
+- Two passes. The cover needs the moisture solve, which needs temperature, winds and currents, which need the cover: a prior pass on the next coarser grid solves everything under a uniform cover of 0.62 trapping 27 W/m^2 (three ice-albedo rounds), its cloud field is prolongated to the planet's grid, and the final pass solves everything under it (up to five rounds). The ice iteration stops when the area-weighted mean albedo change falls below 0.001, instead of the per-cell 0.01 that single sea-ice cells never satisfied. Climate stage 3.1 s at level 6 (2.7 before).
+- Sunshine hours per year: daylight hours (24 h0 / pi from the sunrise hour angle, in Earth hours whatever the rotation) times 1 - 0.8 cover, summed over the samples; the 0.8 stands for broken cloud letting direct sun through, which is why station sunshine exceeds daylight times the clear fraction.
+
+Calibration status after M20 on the real relief: surface mean 14.6 degrees C, equator 27.4, land precipitation 1,010 mm, cloud cover 0.61 of the sky (observed 0.65 to 0.67), clouds reflect 45 W/m^2 and trap 24 (observed 47 and 27), Koppen A 17 / B 26 / C 15 / D 17 / E 26, ice sheets 16% of the land, permanent sea ice 10% of the ocean. Sunshine against station normals, hours per year: Sahara 4,270 (3,600), Yuma 3,600 (4,000), Cairo 3,640 (3,450), Singapore 1,910 (2,020), Manaus 1,920 (1,900), London 1,980 (1,600), Paris 2,040 (1,660), Reykjavik 1,410 (1,270), Yakutsk 2,070 (2,000), Lisbon 2,530 (2,800), New York 2,880 (2,530). Too sunny where the moisture model is too dry (Tokyo 3,400 against 1,880, Buenos Aires 4,000 against 2,525), too cloudy over the polar plateaus, whose precipitation is too high (Vostok 1,740 against 3,700), and the stratus decks reach only part of the way (Lima 2,500 against 1,280). The two biases named after M11 moved the right way: the Sahara is at 19 degrees (14 before, 26 observed), London at 4 (1 before, 11 observed), Yakutsk at -6 (-12 before, -9 observed). Earth-preset planets (seeds 1 to 3): mean 13.8 to 14.6 degrees C, cloud 0.58 to 0.61, permanent sea ice 14 to 20% of the ocean (more than before: the clear-sky ice contrast feeds back harder), Koppen B 34 to 43%. Build 9.3 s at level 6 (7.1 before). A faint pattern of the icosahedron's faces shows in the cloud cover over the oceans: the wind divergence that clears or lifts the air is taken on the mesh, whose geometry bends at the face edges; the precipitation layer carried the same pattern more faintly before M20.
+
 Mechanisms as built in M6 (`climate/ice.ts`, `climate/koppen.ts`):
 
 - Sea ice in every sample whose surface temperature is below -1.8 degrees C; an ice sheet where the warmest sample of a land cell stays below zero, altitude included. One albedo pass cools iced cells by up to 4 degrees and recomputes the extent. Ice sheets lock 2 km of water per cell; the final sea level is solved from the inventory minus that volume, so the water parameter is now ocean plus ice (Earth 1.364e9 km^3) and a cold planet gets a lower coastline by itself. The glacial-phase parameter cools the global mean by 6 degrees at 1, and everything else (ice, sea level, biomes) follows.
@@ -201,11 +210,11 @@ Calibration status after M5 (Earth preset, seed 1): global precipitation 1,100 m
 
 ### 3.6 Statistics per world
 
-Ocean fraction, mean temperature, ice fraction, desert fraction, forest fraction, number of continents, max elevation, max depth, number of plates, longest river, lake count.
+Ocean fraction, mean temperature, ice fraction, desert fraction, forest fraction, number of continents, max elevation, max depth, number of plates, longest river, lake count; since M20 the mean cloud cover, the land's sunshine hours and the global shortwave and longwave cloud forcing.
 
 ### 3.7 Explain mode (per-cell provenance)
 
-Stored alongside outputs so the inspector can show the causal chain: plateId, crustType, crustAge, nearest boundary type and distance, orogeny step, hotspot flag, elevation components (crust, orogeny, volcanic, erosion), temperature components (insolation, altitude, continentality, current), precipitation components (advected, orographic, convergence, shadow), discharge, biome code.
+Stored alongside outputs so the inspector can show the causal chain: plateId, crustType, crustAge, nearest boundary type and distance, orogeny step, hotspot flag, elevation components (crust, orogeny, volcanic, erosion), temperature components (insolation, altitude, continentality, current), precipitation components (advected, orographic, convergence, shadow), cloud cover per sample and sunshine hours (M20), discharge, biome code.
 
 ### 3.8 Timeline (phase 2, built in M7)
 
@@ -313,6 +322,10 @@ Follow-ups after phase 2, driven by looking at the planets next to the real one:
 - M18: resolution independence and the fine grid (3.1, 3.3): tectonic constants in reference cells converted to the grid in use, so level 7 (55 km cells) builds the same planet in kilometers; a Fine grid option in the app; Budyko runoff (3.4); plate mergers and captures no longer stack aliased parcels into fields of peaks.
 - M19: the Model view, a reader's guide to the physics and the rationale inside the app (`src/ui/model.ts`), and `CLAUDE.md`, a brief of the project's state, conventions and lessons for a new working session.
 
+Phase 3 (section 9.2) and the first slice of phase 4 (9.3), after a climate link they both need:
+
+- M20: clouds and sunshine (3.5): cloud cover from the moisture state (humidity, lifting, a marine deck, stratus over cold water, clearing by sinking air) feeding back into the energy balance (clear-sky albedos under a reflecting cloud, trapped longwave), solved in two passes; Sunshine and Cloud cover layers; recalibration on the real Earth.
+
 ## 8. User interface
 
 The UI exists to expose causality, not to decorate. Every number on screen has a path back to a parameter or a process, and every layer is a field the simulator actually computed.
@@ -338,6 +351,7 @@ The UI exists to expose causality, not to decorate. Every number on screen has a
 | M8 | Mantle heat parameter and the Hot mantle preset; plate births and deaths listed under the statistics, counted per step on the timeline |
 | M9 | Greenhouse, air pressure and eccentricity parameters with the Greenhouse, Thin air and Eccentric orbit presets; the explain drawer's temperature line itemizes the energy balance |
 | M10 | View bar with Map, Globe and Compare; legends; history playback; Export history strip; Export PNG of the view on screen |
+| M20 | Sunshine and Cloud cover layers (the cover with the month slider); a sunshine and cloud line in the explain drawer's climate section; a clouds row in the statistics; the Model view's climate chapter |
 
 ### 8.3 Rules
 

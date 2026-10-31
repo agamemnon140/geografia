@@ -114,6 +114,12 @@ export interface World {
   windU: FloatArray;
   /** Northward surface wind per sample, m/s. */
   windV: FloatArray;
+  /** Cloud cover per sample, sample-major, 0 to 1 (climate/clouds.ts). */
+  cloud: FloatArray;
+  /** Annual-mean cloud cover. */
+  cloudAnnual: FloatArray;
+  /** Sunshine hours per year: the daylight hours not under cloud. */
+  sunshineHours: FloatArray;
   /** Ocean basin id, -1 on land. */
   basin: Int32Array;
   basins: BasinInfo[];
@@ -156,7 +162,7 @@ export function worldBuffers(world: World): ArrayBuffer[] {
     world.discharge, world.downstream, world.waterLevel, world.lake, world.mouth, world.riverLength,
     world.insolationAnnual, world.continentality, world.temperatureAnnual, world.temperature,
     world.temperatureBalance, world.temperatureLapse, world.temperatureContinental,
-    world.windU, world.windV,
+    world.windU, world.windV, world.cloud, world.cloudAnnual, world.sunshineHours,
     world.basin, world.streamfunction, world.currentU, world.currentV, world.sstAnomaly,
     world.seaIceMonths, world.iceSheet, world.koppen,
   ];
@@ -310,6 +316,10 @@ export function finalize(ctx: BuildContext, state: ReliefState, onProgress: Prog
       currentU: climate.ocean.currentU,
       currentV: climate.ocean.currentV,
       sstAnomaly: climate.ocean.sstAnomaly,
+      cloudAnnual: climate.moisture.cloudAnnual,
+      sunshineHours: climate.sunshineHours,
+      cloudShortwave: climate.temperature.cloudShortwave,
+      cloudLongwave: climate.temperature.cloudLongwave,
     },
     { seaIceMonths: climate.ice.seaIceMonths, iceSheet: climate.ice.iceSheet, koppen },
   );
@@ -360,6 +370,9 @@ export function finalize(ctx: BuildContext, state: ReliefState, onProgress: Prog
     temperatureContinental: climate.temperature.continentalTerm,
     windU: climate.windU,
     windV: climate.windV,
+    cloud: climate.moisture.cloud,
+    cloudAnnual: climate.moisture.cloudAnnual,
+    sunshineHours: climate.sunshineHours,
     basin: climate.ocean.basin,
     basins: climate.ocean.basins,
     streamfunction: climate.ocean.streamfunction,

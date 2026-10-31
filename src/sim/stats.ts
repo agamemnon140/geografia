@@ -76,6 +76,13 @@ export interface WorldStats {
   permanentSeaIceFraction: number;
   /** Ocean with sea ice in at least one sample, as a fraction of the ocean area. */
   seasonalSeaIceFraction: number;
+  /** Area-weighted cloud cover over the whole surface, 0 to 1 (Earth about 0.65). */
+  meanCloudFraction: number;
+  /** Area-weighted sunshine hours per year over land. */
+  meanLandSunshineHours: number;
+  /** Global means of the sunlight the clouds reflect (negative) and the longwave they trap, W/m^2 (Earth: -47 and +27). */
+  cloudShortwaveForcing: number;
+  cloudLongwaveForcing: number;
   /** Land fraction per Koppen group: tropical, arid, temperate, continental, polar. */
   koppen: { A: number; B: number; C: number; D: number; E: number };
 }
@@ -107,6 +114,10 @@ export interface ClimateFields {
   currentU: Float64Array;
   currentV: Float64Array;
   sstAnomaly: Float64Array;
+  cloudAnnual: Float64Array;
+  sunshineHours: Float64Array;
+  cloudShortwave: Float64Array;
+  cloudLongwave: Float64Array;
 }
 
 export interface BiomeFields {
@@ -150,6 +161,10 @@ export function computeStats(grid: Grid, relief: ReliefFields, hydro: HydrologyF
   let iceSheet = 0;
   let permanentIce = 0;
   let seasonalIce = 0;
+  let cloudSum = 0;
+  let sunshineSum = 0;
+  let shortwaveSum = 0;
+  let longwaveSum = 0;
   const koppen = { A: 0, B: 0, C: 0, D: 0, E: 0 };
   const hyps = new Array<number>(HYPSOMETRY_BINS).fill(0);
   for (let i = 0; i < n; i++) {
@@ -166,6 +181,9 @@ export function computeStats(grid: Grid, relief: ReliefFields, hydro: HydrologyF
     if (speed > strongest) strongest = speed;
     if (climate.sstAnomaly[i] > warmest) warmest = climate.sstAnomaly[i];
     if (climate.sstAnomaly[i] < coldest) coldest = climate.sstAnomaly[i];
+    cloudSum += a * climate.cloudAnnual[i];
+    shortwaveSum += a * climate.cloudShortwave[i];
+    longwaveSum += a * climate.cloudLongwave[i];
     if (e < 0) {
       ocean += a;
       oceanSum += a * -e;
@@ -180,6 +198,7 @@ export function computeStats(grid: Grid, relief: ReliefFields, hydro: HydrologyF
       const lakeAtMouth = hydro.lake[m];
       if (lakeAtMouth >= 0 && hydro.lakes[lakeAtMouth].endorheic) endorheicArea += a;
       if (biome.iceSheet[i]) iceSheet += a;
+      sunshineSum += a * climate.sunshineHours[i];
       const group = koppenGroup(biome.koppen[i]) as keyof typeof koppen;
       if (group in koppen) koppen[group] += a;
     }
@@ -268,6 +287,10 @@ export function computeStats(grid: Grid, relief: ReliefFields, hydro: HydrologyF
     iceSheetFraction: land > 0 ? iceSheet / land : 0,
     permanentSeaIceFraction: ocean > 0 ? permanentIce / ocean : 0,
     seasonalSeaIceFraction: ocean > 0 ? seasonalIce / ocean : 0,
+    meanCloudFraction: cloudSum / total,
+    meanLandSunshineHours: land > 0 ? sunshineSum / land : 0,
+    cloudShortwaveForcing: shortwaveSum / total,
+    cloudLongwaveForcing: longwaveSum / total,
     koppen: {
       A: land > 0 ? koppen.A / land : 0,
       B: land > 0 ? koppen.B / land : 0,

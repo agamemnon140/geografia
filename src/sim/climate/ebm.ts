@@ -19,14 +19,17 @@ import { levelsUpTo, prolongate } from './multilevel.ts';
  */
 
 /**
- * Outgoing longwave at 0 degrees C with Earth's greenhouse, W/m^2. North et
- * al. (1981) give 203.3 for a model whose temperature is a zonal mean; here
- * the balance is per cell with its own albedo and the lapse rate measured
- * from the mean surface, and 206.5 brings the real Earth's surface mean to
- * its observed 14.5 degrees C (the ice feedback makes the response steep:
- * about one degree per W/m^2 here).
+ * Clear-sky outgoing longwave at 0 degrees C with Earth's greenhouse,
+ * W/m^2. North et al. (1981) give 203.3 all-sky for a model whose
+ * temperature is a zonal mean; here the balance is per cell with its own
+ * albedo, the lapse rate measured from the mean surface, and the clouds'
+ * trapped longwave subtracted per cell (M20), so A is the clear-sky value:
+ * 206.5 brought the real Earth's surface mean to its observed 14.5 degrees
+ * C with the clouds folded in, and the clouds now trap about 27 W/m^2 on
+ * average (the ice feedback makes the response steep: about one degree per
+ * W/m^2 here).
  */
-export const OLR_A = 206.5;
+export const OLR_A = 237;
 /** Outgoing longwave slope, W/m^2 per degree C. */
 export const OLR_B = 2.09;
 /**
@@ -43,10 +46,34 @@ export const GREENHOUSE_FORCING_W = 20;
 export const PRESSURE_GREENHOUSE_W = 8;
 /** Global cooling at the glacial maximum (glacial phase 1), degrees C; Earth's last one was about 6. */
 export const GLACIAL_COOLING_C = 6;
-/** Planetary albedo of open ocean, ice-free land and ice, clouds included (Earth's mean is 0.30; vegetated land is barely brighter than cloudy seas). */
-export const ALBEDO_OCEAN = 0.27;
-export const ALBEDO_LAND = 0.3;
-export const ALBEDO_ICE = 0.62;
+/**
+ * Clear-sky planetary albedo of open ocean, ice-free land and ice (M20;
+ * until M19 the clouds were folded in as 0.27, 0.30 and 0.62). Clouds add
+ * their own reflection through `planetaryAlbedo`, so under Earth's mean
+ * cover of 0.62 the ocean returns to 0.26, the land to 0.30 and ice stays
+ * near 0.65 (a bright surface under a cloud is still bright). ALBEDO_CLOUD
+ * is the top-of-atmosphere reflection of an average deck (thick stratus
+ * 0.6, thin cirrus 0.2); with these values clouds reflect about 50 W/m^2
+ * of the real Earth's sunlight (observed 47).
+ */
+export const ALBEDO_OCEAN = 0.1;
+export const ALBEDO_LAND = 0.16;
+export const ALBEDO_ICE = 0.56;
+export const ALBEDO_CLOUD = 0.3;
+/** Longwave trapped per unit of cloud cover, W/m^2 (Earth's clouds trap about 27 W/m^2 at a cover of 0.62). */
+export const CLOUD_LONGWAVE_W = 44;
+
+/**
+ * Albedo of a cell from its clear-sky surface albedo and its cloud cover.
+ * Under the cloudy part the sunlight reflects between cloud and surface:
+ * cloud + (1 - cloud)^2 surface / (1 - cloud surface), the two-stream sum,
+ * which is why clouds hardly brighten an ice sheet but double the ocean's
+ * reflection.
+ */
+export function planetaryAlbedo(surface: number, cloud: number): number {
+  const cloudy = ALBEDO_CLOUD + ((1 - ALBEDO_CLOUD) * (1 - ALBEDO_CLOUD) * surface) / (1 - ALBEDO_CLOUD * surface);
+  return surface * (1 - cloud) + cloudy * cloud;
+}
 export const MIN_DIFFUSION = 0.03;
 export const MAX_DIFFUSION = 30;
 /**
@@ -96,9 +123,10 @@ export function olrOffset(params: PlanetParams): number {
  * vertices keep their ids. The edge weights use the mean transport of the
  * two cells and a fixed degree of six, so the operator is symmetric
  * positive definite and the iteration count stays in the tens however
- * stiff the transport makes the system.
+ * stiff the transport makes the system. `forcing` is an optional per-cell
+ * term added to the absorbed side (the longwave the clouds trap).
  */
-export function solveEnergyBalance(grid: Grid, params: PlanetParams, absorbed: Float64Array, out: Float64Array, base = DIFFUSION_EARTH, boost = TROPICAL_TRANSPORT): void {
+export function solveEnergyBalance(grid: Grid, params: PlanetParams, absorbed: Float64Array, out: Float64Array, base = DIFFUSION_EARTH, boost = TROPICAL_TRANSPORT, forcing: Float64Array | null = null): void {
   const d = diffusionField(grid, params, base, boost);
   const a = olrOffset(params);
   const levels = levelsUpTo(grid.level);
@@ -108,7 +136,7 @@ export function solveEnergyBalance(grid: Grid, params: PlanetParams, absorbed: F
     const mesh = meshGeometry(g);
     const next = new Float64Array(g.n);
     if (l > 0) prolongate(levels[l - 1], g, t, next);
-    else for (let i = 0; i < g.n; i++) next[i] = (absorbed[i] - a) / OLR_B;
+    else for (let i = 0; i < g.n; i++) next[i] = (absorbed[i] + (forcing ? forcing[i] : 0) - a) / OLR_B;
     const coef = new Float64Array(g.nb.length);
     const diag = new Float64Array(g.n);
     const rhs = new Float64Array(g.n);
@@ -121,7 +149,7 @@ export function solveEnergyBalance(grid: Grid, params: PlanetParams, absorbed: F
         sum += c;
       }
       diag[i] = OLR_B + sum;
-      rhs[i] = absorbed[i] - a;
+      rhs[i] = absorbed[i] + (forcing ? forcing[i] : 0) - a;
     }
     conjugateGradient(g, coef, diag, rhs, next);
     t = next;

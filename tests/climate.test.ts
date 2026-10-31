@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { circulationCells } from '../src/sim/climate/circulation.ts';
-import { ANNUAL, SAMPLES, SOLAR_CONSTANT, dailyMeanInsolation, declinations } from '../src/sim/climate/insolation.ts';
+import { ANNUAL, SAMPLES, SOLAR_CONSTANT, dailyMeanInsolation, daylightHours, declinations } from '../src/sim/climate/insolation.ts';
 import { lapseRate } from '../src/sim/climate/temperature.ts';
 import { DEG } from '../src/sim/grid/geometry.ts';
 import { Grid } from '../src/sim/grid/grid.ts';
@@ -48,6 +48,49 @@ describe('insolation', () => {
       area += grid.area[i] * SAMPLES;
     }
     expect(sum / area).toBeCloseTo(SOLAR_CONSTANT / 4, 0);
+  });
+});
+
+describe('daylight, clouds and sunshine (M20)', () => {
+  it('gives twelve hours of daylight at the equator and on the equinox, polar day and night at 80 degrees', () => {
+    expect(daylightHours(0, 23 * DEG)).toBeCloseTo(12, 9);
+    expect(daylightHours(45 * DEG, 0)).toBeCloseTo(12, 9);
+    expect(daylightHours(80 * DEG, 23 * DEG)).toBe(24);
+    expect(daylightHours(80 * DEG, -23 * DEG)).toBe(0);
+    expect(daylightHours(51.5 * DEG, 23.44 * DEG)).toBeGreaterThan(16);
+    expect(daylightHours(51.5 * DEG, -23.44 * DEG)).toBeLessThan(8);
+  });
+
+  it('keeps the cloud cover between 0 and 1 with an Earth-like mean, and gives deserts more sun than rainforests', () => {
+    for (const w of worlds) {
+      let desertSun = 0;
+      let deserts = 0;
+      let wetSun = 0;
+      let wets = 0;
+      for (let i = 0; i < w.n; i++) {
+        expect(w.cloudAnnual[i]).toBeGreaterThanOrEqual(0);
+        expect(w.cloudAnnual[i]).toBeLessThanOrEqual(1);
+        expect(w.sunshineHours[i]).toBeGreaterThanOrEqual(0);
+        expect(w.sunshineHours[i]).toBeLessThanOrEqual(24 * 366);
+        if (w.elevation[i] < w.seaLevel || w.iceSheet[i]) continue;
+        if (w.precipitation[i] < 250) {
+          desertSun += w.sunshineHours[i];
+          deserts++;
+        } else if (w.precipitation[i] > 1500) {
+          wetSun += w.sunshineHours[i];
+          wets++;
+        }
+      }
+      for (let k = 0; k < SAMPLES * w.n; k += 7) {
+        expect(w.cloud[k]).toBeGreaterThanOrEqual(0);
+        expect(w.cloud[k]).toBeLessThanOrEqual(1);
+      }
+      expect(w.stats.meanCloudFraction).toBeGreaterThan(0.4);
+      expect(w.stats.meanCloudFraction).toBeLessThan(0.8);
+      expect(deserts).toBeGreaterThan(0);
+      expect(wets).toBeGreaterThan(0);
+      expect(desertSun / deserts).toBeGreaterThan(wetSun / wets + 500);
+    }
   });
 });
 

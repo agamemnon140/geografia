@@ -193,6 +193,28 @@ export function precipitationAt(world: World, cell: number, sample: number): num
   return sample >= ANNUAL ? world.precipitation[cell] : world.precipitationSamples[sample * world.n + cell];
 }
 
+/** Cloud cover of a cell for a sample index or ANNUAL, 0 to 1. */
+export function cloudAt(world: World, cell: number, sample: number): number {
+  return sample >= ANNUAL ? world.cloudAnnual[cell] : world.cloud[sample * world.n + cell];
+}
+
+/** Sunshine hours per year: slate under permanent cloud, gold where the sky is clear. */
+const SUNSHINE_RAMP: Stop[] = [
+  [1000, [70, 85, 120]],
+  [1600, [120, 140, 170]],
+  [2200, [200, 205, 205]],
+  [2800, [240, 230, 170]],
+  [3400, [245, 200, 90]],
+  [4000, [235, 140, 40]],
+];
+
+/** Cloud cover, percent of the sky: deep sky blue when clear, white when overcast. */
+const CLOUD_RAMP: Stop[] = [
+  [0, [40, 110, 200]],
+  [50, [150, 160, 175]],
+  [100, [245, 245, 248]],
+];
+
 const LAKE_COLOR: RGB = [40, 120, 210];
 export const RIVER_COLOR: RGB = [20, 70, 190];
 const LAND_WASH: RGB = [240, 236, 226];
@@ -366,6 +388,36 @@ export const LAYERS: Layer[] = [
     smooth: (world, px, sample) => {
       const c = ramp(PRECIPITATION_RAMP, px.interpSeasonal(world.precipitationSamples, world.precipitation, world.n, sample));
       return relief(world, px) >= 0 ? c : [c[0] * 0.55, c[1] * 0.55, c[2] * 0.6];
+    },
+  },
+  {
+    id: 'sunshine',
+    name: 'Sunshine',
+    legend: { kind: 'ramp', stops: SUNSHINE_RAMP, unit: 'hours of sun per year (÷ 12 ≈ clear days: 1,200 h ≈ 100, 3,600 h ≈ 300)' },
+    relief: 'light',
+    cellColor: (world, i) => {
+      const c = ramp(SUNSHINE_RAMP, world.sunshineHours[i]);
+      if (world.elevation[i] >= world.seaLevel) return c;
+      return [c[0] * 0.55, c[1] * 0.55, c[2] * 0.6];
+    },
+    smooth: (world, px) => {
+      const c = ramp(SUNSHINE_RAMP, px.interp(world.sunshineHours));
+      return relief(world, px) >= 0 ? c : [c[0] * 0.55, c[1] * 0.55, c[2] * 0.6];
+    },
+  },
+  {
+    id: 'cloud',
+    name: 'Cloud cover',
+    seasonal: true,
+    legend: { kind: 'ramp', stops: CLOUD_RAMP, unit: '% of the sky covered' },
+    cellColor: (world, i, sample) => {
+      const c = ramp(CLOUD_RAMP, 100 * cloudAt(world, i, sample));
+      if (world.elevation[i] >= world.seaLevel) return c;
+      return [c[0] * 0.7, c[1] * 0.7, c[2] * 0.75];
+    },
+    smooth: (world, px, sample) => {
+      const c = ramp(CLOUD_RAMP, 100 * px.interpSeasonal(world.cloud, world.cloudAnnual, world.n, sample));
+      return relief(world, px) >= 0 ? c : [c[0] * 0.7, c[1] * 0.7, c[2] * 0.75];
     },
   },
   {

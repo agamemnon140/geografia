@@ -62,6 +62,34 @@ describe('the real Earth reference', () => {
     expect(earth.temperatureAnnual[cellAt(65, 120)]).toBeLessThan(-5);
     expect(earth.iceSheet[cellAt(-80, 90)]).toBe(1);
   });
+
+  it('has Earth-like clouds and sunshine (M20)', () => {
+    const s = earth.stats;
+    // The cloud model is calibrated here: 14.5 C with clouds covering about two thirds of the sky,
+    // reflecting 47 W/m^2 and trapping 27 (observed); the model gives 0.61, -45 and +25.
+    expect(Math.abs(s.meanTemperature - 14.5)).toBeLessThan(0.7);
+    expect(s.meanCloudFraction).toBeGreaterThan(0.55);
+    expect(s.meanCloudFraction).toBeLessThan(0.7);
+    expect(s.cloudShortwaveForcing).toBeGreaterThan(-55);
+    expect(s.cloudShortwaveForcing).toBeLessThan(-38);
+    expect(s.cloudLongwaveForcing).toBeGreaterThan(18);
+    expect(s.cloudLongwaveForcing).toBeLessThan(32);
+    // Sunshine normals: the Sahara about 3,600 h/yr, Yuma 4,000, Manaus 1,900, London 1,600.
+    const sahara = earth.sunshineHours[cellAt(23, 10)];
+    const amazon = earth.sunshineHours[cellAt(-3, -60)];
+    expect(sahara).toBeGreaterThan(3600);
+    expect(amazon).toBeGreaterThan(1400);
+    expect(amazon).toBeLessThan(2600);
+    expect(sahara).toBeGreaterThan(amazon + 1000);
+    expect(earth.sunshineHours[cellAt(32.7, -114.6)]).toBeGreaterThan(3200);
+    expect(earth.sunshineHours[cellAt(51.5, -0.1)]).toBeLessThan(2400);
+    // Stratus over the cold Humboldt water off Peru.
+    expect(earth.cloudAnnual[cellAt(-12, -77)]).toBeGreaterThan(0.4);
+    for (let i = 0; i < earth.n; i += 89) {
+      expect(Number.isFinite(earth.sunshineHours[i])).toBe(true);
+      expect(Number.isFinite(earth.cloudAnnual[i])).toBe(true);
+    }
+  });
 });
 
 describe("the real Earth's past", () => {

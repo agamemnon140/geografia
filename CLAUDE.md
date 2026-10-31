@@ -63,6 +63,14 @@ every push to `main` of https://github.com/agamemnon140/geografia). Local:
   (`runoffFraction`); merge/capture aliasing fixed (`placeInFrame` moves a
   parcel to a free cell instead of stacking crust into 5 km peaks).
 - M19: the Model view in the app (`src/ui/model.ts`) and this brief.
+- M20: clouds and sunshine (`src/sim/climate/clouds.ts`): cloud cover per
+  sample from the moisture state (humidity proxy, lifted cloud, a marine
+  deck, stratus over cold currents, clearing by sinking air) feeds back into
+  the energy balance (clear-sky albedos under a reflecting cloud by the
+  two-stream rule, trapped longwave per cell); the climate runs in two
+  passes (a prior pass one level coarser, then the final one); Sunshine
+  (annual) and Cloud cover (seasonal) layers; A of the OLR is now the
+  clear-sky 237 W/m2.
 
 ## Where things are
 
@@ -75,7 +83,7 @@ every push to `main` of https://github.com/agamemnon140/geografia). Local:
   `genesis.ts` (initial condition), `riftpath.ts`, `crust.ts` (constants
   with their justification), `plates.ts`, `parcels.ts`.
 - `src/sim/hydrology/`, `src/sim/climate/` (ebm, temperature, circulation,
-  ocean, moisture, ice, koppen), `src/sim/pipeline.ts` (build, finalize,
+  ocean, moisture, clouds, ice, koppen), `src/sim/pipeline.ts` (build, finalize,
   history, World type), `src/sim/earth.ts` (real Earth, past).
 - `src/render/` (layers, paint, raster, globe, map, equalearth, legend),
   `src/ui/app.ts` (the app), `src/ui/model.ts` (Model view text),
@@ -83,19 +91,26 @@ every push to `main` of https://github.com/agamemnon140/geografia). Local:
 - `scripts/`: `render-png.ts out.png [preset|Real] [seed] [layer] [width]`,
   `render-globe.ts`, `diag-tectonics.ts`, `diag-climate.ts [Real]`,
   `convert-etopo5.ts`, `convert-paleodem.ts`, `make-icons.ts`.
-- `tests/`: 19 files, 113 tests; CI budget for the full build is 60 s.
+- `tests/`: 20 files, 118 tests; CI budget for the full build is 60 s.
 
 ## Calibration state (Earth preset, 200 steps, several seeds)
 
 Ocean 66-74% (Earth 71); landmasses above a million km2 4-9 (Earth 4-7);
 largest landmass 35-85% of the land (57); mean land elevation 0.3-1.0 km
 (0.84 with ice); surface above 1.5 km 1-7% (6 with ice); mean ocean depth
-3.5-4.0 km (3.7); mean temperature 11-14 C (14.5); 13-19 plates alive.
-Real Earth through the climate links: 14.5 C mean, Koppen A15/B26/C16/D17/E26
-(Earth 19/30/14/25/13), land precipitation about 1,000 mm.
+3.5-4.0 km (3.7); mean temperature 13.8-14.8 C (14.5); 13-19 plates alive;
+cloud cover 0.58-0.61. Real Earth through the climate links: 14.6 C mean,
+equator 27.4, Koppen A17/B26/C15/D17/E26 (Earth 19/30/14/25/13), land
+precipitation about 1,000 mm, clouds 0.61 of the sky reflecting 45 W/m2 and
+trapping 24 (Earth 0.66, 47, 27); sunshine Sahara 4,270 h/yr (3,600),
+Manaus 1,920 (1,900), London 1,980 (1,600).
 
-Known biases: boreal belt 5-9 C too cold; subtropical deserts too cool;
-permanent sea ice overestimated; compact-continent planets colder and more
+Known biases: boreal belt 3-7 C too cold (London 4 C against 11; it was 1
+before M20); subtropical deserts 5-7 C too cool (Sahara 19 against 26; it
+was 14); permanent sea ice overestimated (10% of the ocean on the real
+Earth, 12-20% on simulated planets, Earth 3%); polar plateaus too wet and
+therefore too cloudy; regions the moisture model leaves too dry (Japan, the
+Pampas) come out too sunny; compact-continent planets colder and more
 arid; plate boundaries jagged at the cell scale; a few dozen one-cell suture
 spikes after collisions; past greenhouse not applied to the Earth timeline.
 
@@ -115,7 +130,16 @@ spikes after collisions; past greenhouse not applied to the Earth timeline.
 - Useful diagnostics: isolated-peak counts attributed to crust, volcanic or
   sediment; near-sea-level hypsometry bands against the real Earth (Earth:
   4.1% of the surface in -200..0 m, 7.7% in 0..200 m); per-seed event
-  summaries; thickness, plates, rivers and precipitation renders.
+  summaries; thickness, plates, rivers and precipitation renders;
+  `diag-climate.ts Real` prints cloud and sunshine per band and at twenty
+  named places against station normals.
+- The energy balance responds about one degree per W/m2 (ice feedback), so
+  every cloud constant moves the global mean: retune `OLR_A` last, after
+  the cloud pattern. The humidity proxy is a column ratio (what the winds
+  bring over what the surface holds), low wherever the winds export
+  moisture, hence the marine deck and the low ramp start.
+- `scripts/render-png.ts` prints the whole stats JSON; pipe it through
+  `tail -3` in a session.
 
 ## Candidates for what comes next
 
