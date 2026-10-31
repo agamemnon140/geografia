@@ -64,7 +64,11 @@ currents, sstAnomaly, plates, crustAge, thickness, cells.
   shipped in `public/data/`) with the simulator's own rivers, climate and
   biomes, so the links can be judged against the planet we know; it joins
   the gallery and the Compare view. On the command line use `Real` as the
-  preset name.
+  preset name. Its history follows: twenty reconstructed reliefs from 200
+  to 10 million years ago (PALEOMAP PaleoDEMs by Scotese and Wright, 2018,
+  CC BY 4.0, at one degree) stream into the timeline, each with the
+  simulator's climate on top, so Pangea breaks up under the same slider as
+  the simulated planets.
 - Maps and globes interpolate fields across cells (smooth coastlines),
   hillshade the relief and draw rivers as lines whose width grows with
   discharge.

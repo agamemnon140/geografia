@@ -1,4 +1,4 @@
-import { buildEarth, parseEarthElevation } from '../sim/earth.ts';
+import { EARTH_HISTORY_AGES, buildEarth, buildEarthKeyframe, earthContext, parseEarthElevation, parseEarthHistory } from '../sim/earth.ts';
 import { buildHistory, compactWorld, finalize, worldBuffers } from '../sim/pipeline.ts';
 import type { WorkerRequest, WorkerResponse } from './protocol.ts';
 
@@ -17,9 +17,19 @@ scope.onmessage = (event) => {
   };
   try {
     if (request.type === 'earth') {
-      const world = buildEarth(parseEarthElevation(request.elevation), progress);
+      const context = earthContext();
+      const world = buildEarth(parseEarthElevation(request.elevation), progress, context);
       scope.postMessage({ type: 'done', id: request.id, world, elapsedMs: performance.now() - started }, worldBuffers(world));
-      scope.postMessage({ type: 'history', id: request.id, elapsedMs: 0 });
+      // The real past follows the present: each reconstructed relief gets its climate now, oldest first.
+      const historyStart = performance.now();
+      if (request.history) {
+        const slices = parseEarthHistory(request.history);
+        slices.forEach((slice, k) => {
+          const keyframe = compactWorld(buildEarthKeyframe(context, slice, EARTH_HISTORY_AGES[k]));
+          scope.postMessage({ type: 'keyframe', id: request.id, index: k, total: slices.length, world: keyframe }, worldBuffers(keyframe));
+        });
+      }
+      scope.postMessage({ type: 'history', id: request.id, elapsedMs: performance.now() - historyStart });
       return;
     }
     const history = buildHistory(request.params, progress, request.options ?? {});

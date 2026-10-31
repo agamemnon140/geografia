@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { EARTH_DATA_PATH, buildEarth, earthElevationAt, parseEarthElevation } from '../src/sim/earth.ts';
+import { EARTH_DATA_PATH, EARTH_HISTORY_AGES, EARTH_HISTORY_PATH, EARTH_HISTORY_REFERENCE, buildEarth, buildEarthKeyframe, earthContext, earthElevationAt, parseEarthElevation, parseEarthHistory } from '../src/sim/earth.ts';
 import { DEG } from '../src/sim/grid/geometry.ts';
 import { Grid } from '../src/sim/grid/grid.ts';
 import { nearestCell } from '../src/sim/grid/locate.ts';
@@ -61,5 +61,30 @@ describe('the real Earth reference', () => {
     // Siberia is cold in the annual mean, Antarctica is ice.
     expect(earth.temperatureAnnual[cellAt(65, 120)]).toBeLessThan(-5);
     expect(earth.iceSheet[cellAt(-80, 90)]).toBe(1);
+  });
+});
+
+describe("the real Earth's past", () => {
+  it('ships twenty reconstructions and builds the oldest as Pangea with its age as the step', () => {
+    const history = readFileSync(`public/${EARTH_HISTORY_PATH}`);
+    const slices = parseEarthHistory(history.buffer.slice(history.byteOffset, history.byteOffset + history.byteLength));
+    expect(slices.length).toBe(EARTH_HISTORY_AGES.length);
+    expect(EARTH_HISTORY_AGES[0]).toBe(200);
+    expect(EARTH_HISTORY_AGES[EARTH_HISTORY_AGES.length - 1]).toBe(10);
+    let land = 0;
+    for (const v of slices[0].data) if (v >= 0) land++;
+    expect(land / slices[0].data.length).toBeGreaterThan(0.2);
+    expect(land / slices[0].data.length).toBeLessThan(0.45);
+    const pangea = buildEarthKeyframe(earthContext(), slices[0], EARTH_HISTORY_AGES[0]);
+    expect(pangea.steps).toBe(0);
+    expect(pangea.params.tectonicAge).toBe(200);
+    expect(pangea.reference).toBe(EARTH_HISTORY_REFERENCE);
+    expect(pangea.seaLevel).toBe(0);
+    expect(pangea.stats.oceanFraction).toBeGreaterThan(0.6);
+    expect(pangea.stats.oceanFraction).toBeLessThan(0.8);
+    // One supercontinent, give or take the terranes of the Tethys.
+    expect(pangea.stats.continents).toBeLessThanOrEqual(4);
+    expect(pangea.stats.largestLandmassKm2 / (pangea.stats.landFraction * pangea.stats.totalAreaKm2)).toBeGreaterThan(0.7);
+    for (let i = 0; i < pangea.n; i += 97) expect(Number.isFinite(pangea.temperatureAnnual[i])).toBe(true);
   });
 });

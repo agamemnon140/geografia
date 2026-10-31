@@ -136,15 +136,12 @@ export function earthReliefState(grid: Grid, elevation: EarthElevation): ReliefS
   };
 }
 
-/** Hydrology, climate, ice and biomes of the real Earth from the shipped relief, at the Earth grid level. */
-export function buildEarth(elevation: EarthElevation, onProgress: Progress = () => {}): World {
-  onProgress('grid', 0);
+/** The context the real Earth is finalized in (grid level, cell areas, hydrology), shared by the present and its past. */
+export function earthContext(): BuildContext {
   const grid = Grid.get(EARTH_LEVEL);
   const params = { ...EARTH, seed: 0 };
   const areaKm2 = cellAreasKm2(grid, params.radiusKm);
-  onProgress('relief', 0.05);
-  const state = earthReliefState(grid, elevation);
-  const context: BuildContext = {
+  return {
     params,
     grid,
     level: EARTH_LEVEL,
@@ -153,8 +150,56 @@ export function buildEarth(elevation: EarthElevation, onProgress: Progress = () 
     hydro: new Hydrology(grid, areaKm2, params.radiusKm),
     seaLevelOverride: 0,
   };
+}
+
+/** Hydrology, climate, ice and biomes of the real Earth from the shipped relief, at the Earth grid level. */
+export function buildEarth(elevation: EarthElevation, onProgress: Progress = () => {}, context: BuildContext = earthContext()): World {
+  onProgress('grid', 0);
+  onProgress('relief', 0.05);
+  const state = earthReliefState(context.grid, elevation);
+  state.step = EARTH.tectonicAge;
   const world = finalize(context, state, onProgress);
   world.reference = 'ETOPO5';
   onProgress('done', 1);
+  return world;
+}
+
+/**
+ * The real Earth's past (M16): the PALEOMAP paleo-digital elevation models
+ * of Scotese and Wright (2018), licensed CC BY 4.0, converted by
+ * `scripts/convert-paleodem.ts` into one-degree cell-centered Int16 meters
+ * (row 0 at 89.5 N, column 0 at 179.5 W), one slice every 10 million years
+ * from 200 to 10 Ma, oldest first. The present is the ETOPO5 relief above.
+ */
+export const EARTH_HISTORY_PATH = 'data/earth-history-1deg.i16';
+export const EARTH_HISTORY_ROWS = 180;
+export const EARTH_HISTORY_COLS = 360;
+export const EARTH_HISTORY_AGES: readonly number[] = Array.from({ length: 20 }, (_, i) => 200 - 10 * i);
+export const EARTH_HISTORY_REFERENCE = 'PALEOMAP';
+
+/** Validate and split the shipped history file into its slices, oldest first. */
+export function parseEarthHistory(buffer: ArrayBuffer): EarthElevation[] {
+  const per = EARTH_HISTORY_ROWS * EARTH_HISTORY_COLS;
+  const expected = EARTH_HISTORY_AGES.length * per * 2;
+  if (buffer.byteLength !== expected) throw new Error(`Earth history file has ${buffer.byteLength} bytes, expected ${expected}`);
+  const view = new DataView(buffer);
+  return EARTH_HISTORY_AGES.map((_, k) => {
+    const data = new Int16Array(per);
+    for (let i = 0; i < per; i++) data[i] = view.getInt16((k * per + i) * 2, true);
+    return { rows: EARTH_HISTORY_ROWS, cols: EARTH_HISTORY_COLS, data };
+  });
+}
+
+/**
+ * One slice of the real Earth's past as a world: the reconstructed relief of
+ * `ageMa` million years ago with the simulator's own rivers, climate, ice and
+ * biomes, exactly as a simulated snapshot gets them. Its step counts up from
+ * 200 Ma, so the timeline runs toward the present.
+ */
+export function buildEarthKeyframe(context: BuildContext, slice: EarthElevation, ageMa: number, onProgress: Progress = () => {}): World {
+  const state = earthReliefState(context.grid, slice);
+  state.step = EARTH.tectonicAge - ageMa;
+  const world = finalize(context, state, onProgress);
+  world.reference = EARTH_HISTORY_REFERENCE;
   return world;
 }

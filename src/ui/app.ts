@@ -257,7 +257,11 @@ export function mountApp(root: HTMLElement): void {
   };
 
   const worldTitle = (w: World): string =>
-    w.reference ? `real Earth (${w.reference})` : `seed ${w.params.seed}, step ${w.steps} of ${w.params.tectonicAge}${w.preview ? ' (preview)' : ''}`;
+    w.reference
+      ? w.steps >= w.params.tectonicAge
+        ? `real Earth (${w.reference})`
+        : `the Earth ${w.params.tectonicAge - w.steps} million years ago (${w.reference})`
+      : `seed ${w.params.seed}, step ${w.steps} of ${w.params.tectonicAge}${w.preview ? ' (preview)' : ''}`;
 
   /** Paint `world` into the views that are on screen; the others catch up when shown. */
   const paintViews = (): void => {
@@ -304,7 +308,7 @@ export function mountApp(root: HTMLElement): void {
   const renderCompareOptions = (): void => {
     const options: string[] = [];
     if (current) {
-      current.keyframes.forEach((k, i) => options.push(`<option value="k:${i}">this planet, step ${k.steps}</option>`));
+      current.keyframes.forEach((k, i) => options.push(`<option value="k:${i}">${k.reference ? `the Earth, ${k.params.tectonicAge - k.steps} million years ago` : `this planet, step ${k.steps}`}</option>`));
       options.push(`<option value="k:final">this planet, final (step ${current.world.steps})</option>`);
     }
     entries.forEach((e, i) => {
@@ -367,7 +371,11 @@ export function mountApp(root: HTMLElement): void {
     timeline.max = String(total);
     const position = Number(timeline.value);
     const shown = position >= total ? current.world : current.keyframes[position];
-    timelineLabel.textContent = `step ${shown.steps} of ${shown.params.tectonicAge} (about ${shown.steps} million years)`;
+    timelineLabel.textContent = shown.reference
+      ? shown.steps >= shown.params.tectonicAge
+        ? `the present (${shown.reference})`
+        : `${shown.params.tectonicAge - shown.steps} million years ago (${shown.reference})`
+      : `step ${shown.steps} of ${shown.params.tectonicAge} (about ${shown.steps} million years)`;
   };
 
   const showTimelinePosition = (): void => {
@@ -506,7 +514,8 @@ export function mountApp(root: HTMLElement): void {
   };
 
   let earthBytes: ArrayBuffer | null = null;
-  /** The real Earth: fetch the shipped relief once, build it in the worker, add it to the gallery. */
+  let earthHistoryBytes: ArrayBuffer | null = null;
+  /** The real Earth: fetch the shipped relief and its past once, build them in the worker, add the result to the gallery. */
   const runEarth = async (): Promise<void> => {
     if (building) return;
     building = true;
@@ -522,13 +531,37 @@ export function mountApp(root: HTMLElement): void {
         if (!response.ok) throw new Error(`relief file: HTTP ${response.status}`);
         earthBytes = await response.arrayBuffer();
       }
+      if (!earthHistoryBytes) {
+        status.textContent = 'loading the real past (PALEOMAP reconstructions)';
+        const response = await fetch(`${import.meta.env.BASE_URL}data/earth-history-1deg.i16`);
+        if (response.ok) earthHistoryBytes = await response.arrayBuffer();
+      }
+      let entry: GalleryEntry | null = null;
       const result = await client.buildEarth(earthBytes.slice(0), {
         onProgress: (stage, fraction) => {
           progress.value = fraction;
           status.textContent = `real Earth: ${stage}`;
         },
-      });
-      current = addToGallery(result.world);
+        onKeyframe: (keyframe, index, total) => {
+          if (!entry) return;
+          entry.keyframes.push(keyframe);
+          if (current === entry) {
+            timeline.max = String(entry.keyframes.length);
+            if (followLatest) timeline.value = String(entry.keyframes.length);
+            renderTimeline();
+            renderCompareOptions();
+          }
+          status.textContent = `the real past: ${index + 1} of ${total} reconstructions`;
+        },
+        onHistory: (elapsedMs) => {
+          if (entry && entry.keyframes.length > 0) {
+            status.textContent = `the real past ready in ${(elapsedMs / 1000).toFixed(1)} s; drag the slider from 200 million years ago to today`;
+          }
+        },
+      }, earthHistoryBytes ? earthHistoryBytes.slice(0) : undefined);
+      entry = addToGallery(result.world);
+      current = entry;
+      followLatest = true;
       timeline.value = '0';
       selectedCell = -1;
       showWorld(result.world);
